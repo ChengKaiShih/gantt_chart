@@ -94,6 +94,7 @@ function normalizeProject(value) {
       finish: typeof item.finish === "string" ? item.finish : "",
       notes: typeof item.notes === "string" ? item.notes : "",
       collapsed: Boolean(item.collapsed),
+      rowHeight: Number.isFinite(Number(item.rowHeight)) ? Math.max(48, Math.min(1200, Number(item.rowHeight))) : undefined,
       milestone: Boolean(item.milestone),
       duration: item.milestone ? 0 : (item.duration ?? inclusiveDuration(item.start, item.finish)),
       notBefore: typeof item.notBefore === "string" ? item.notBefore : "",
@@ -361,10 +362,10 @@ function renderGrid(displayTasks, cpm) {
     html += `
       <div class="schedule-row ${selected ? "selected" : ""} ${summary ? "summary-row" : ""} ${conflict ? "conflict-row" : ""}" data-id="${escapeHtml(item.id)}" style="--timeline-width:${model.width}px">
         <div class="task-cell">
-          <div class="row-number">${escapeHtml(wbs.get(item.id))}</div>
+          <div class="row-number">${escapeHtml(wbs.get(item.id))}<span class="row-resize-handle" title="拖曳調整列高；雙擊恢復自動列高" aria-hidden="true"></span></div>
           <div class="task-name-wrap" style="padding-left:${5 + item.level * 18}px">
             ${collapseControl}
-            <input class="task-input" data-field="name" value="${escapeHtml(item.name)}" aria-label="工項名稱" />
+            <textarea class="task-input" data-field="name" rows="1" aria-label="工項名稱">${escapeHtml(item.name)}</textarea>
             ${conflict ? `<span class="warning-mark" title="計畫日期與前置關係衝突">!</span>` : ""}
           </div>
           <div><input class="date-input" type="date" data-field="start" value="${escapeHtml(item.start)}" ${summary ? "disabled" : ""} aria-label="開始日期" /></div>
@@ -480,7 +481,7 @@ function addTopLevelTask() {
   const dates = defaultDates();
   const item = task(uid(), "新增工項", 0, dates.start, dates.finish, [], "");
   state.tasks.push(item);
-  selectedId = item.id;
+  selectedId ||= item.id;
   commit({ message: "已新增工項" });
 }
 
@@ -496,7 +497,7 @@ function addChildTask() {
   if (!wasSummary) parent.predecessors = [];
   state.tasks.splice(end, 0, item);
   parent.collapsed = false;
-  selectedId = item.id;
+  selectedId = parent.id;
   commit({ message: "已新增下階工項" });
 }
 
@@ -828,9 +829,21 @@ function applyWidths() {
   document.documentElement.style.setProperty('--left-width',`${widths().reduce((a,b)=>a+b,0)}px`);
 }
 function fitRows() {
-  elements.scheduleGrid.querySelectorAll('.note-input').forEach(el=>{
-    el.style.height='auto'; el.style.height=`${Math.max(34,el.scrollHeight)}px`;
+  elements.scheduleGrid.querySelectorAll('.schedule-row[data-id]').forEach(row=>{
+    let height = 48;
+    row.querySelectorAll('textarea').forEach(el=>{
+      el.style.height='0px';
+      const contentHeight=Math.max(34,el.scrollHeight+2);
+      el.style.height=`${contentHeight}px`;
+      height=Math.max(height,contentHeight+12);
+    });
+    const task=state.tasks.find(t=>t.id===row.dataset.id);
+    row.style.minHeight=`${Math.max(height,task?.rowHeight||48)}px`;
   });
+}
+function refreshArrows() {
+  const tasks=deriveSummaryDates(state.tasks);
+  drawArrows(timelineModel(tasks,state.scale),tasks);
 }
 function arrowPaths() {
   return [...elements.scheduleGrid.querySelectorAll('.dependency-path')].map(p=>({d:p.getAttribute('d'),color:p.getAttribute('stroke')}));
@@ -874,9 +887,32 @@ function setupV2() {
   elements.scheduleGrid.addEventListener('pointerdown',e=>{
     const handle=e.target.closest('.resize-handle'); if(!handle)return;
     e.preventDefault(); const index=Number(handle.dataset.column), initial=e.clientX, original=widths()[index];
-    const move=ev=>{state.columnWidths=[...widths()];state.columnWidths[index]=Math.max(44,Math.min(700,original+ev.clientX-initial));applyWidths();fitRows();};
+    const move=ev=>{state.columnWidths=[...widths()];state.columnWidths[index]=Math.max(44,Math.min(700,original+ev.clientX-initial));applyWidths();fitRows();refreshArrows();};
     const end=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);commit();};
     window.addEventListener('pointermove',move);window.addEventListener('pointerup',end);
+  });
+  elements.scheduleGrid.addEventListener('input',e=>{
+    if(!e.target.matches('textarea'))return;
+    fitRows();refreshArrows();
+  });
+  elements.scheduleGrid.addEventListener('pointerdown',e=>{
+    const handle=e.target.closest('.row-resize-handle');if(!handle)return;
+    e.preventDefault();
+    const row=handle.closest('[data-id]'),task=state.tasks.find(t=>t.id===row.dataset.id);
+    const initial=e.clientY,original=row.getBoundingClientRect().height;
+    const move=ev=>{
+      task.rowHeight=Math.max(48,Math.min(1200,original+ev.clientY-initial));
+      fitRows();refreshArrows();
+    };
+    const end=()=>{
+      window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);window.removeEventListener('pointercancel',end);commit();
+    };
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',end);window.addEventListener('pointercancel',end);
+  });
+  elements.scheduleGrid.addEventListener('dblclick',e=>{
+    const h=e.target.closest('.row-resize-handle');if(!h)return;
+    const task=state.tasks.find(t=>t.id===h.closest('[data-id]').dataset.id);
+    delete task.rowHeight;commit();
   });
   elements.scheduleGrid.addEventListener('dblclick',e=>{
     const h=e.target.closest('.resize-handle');if(!h)return;
@@ -909,7 +945,7 @@ async function renderPng() {
   const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
   ctx.font='13px "Microsoft JhengHei", sans-serif';
   const rows=visibleTasks(tasks).map(t=>({t, lines:wrapText(ctx,t.notes||'',widths()[7]-16),nameLines:wrapText(ctx,t.name,widths()[1]-20-t.level*16)}));
-  rows.forEach(r=>r.h=Math.max(48,(Math.max(r.lines.length,r.nameLines.length))*20+16));
+  rows.forEach(r=>r.h=Math.max(48,r.t.rowHeight||48,(Math.max(r.lines.length,r.nameLines.length))*20+16));
   const w=left+model.width+32,h=rows.reduce((n,r)=>n+r.h,0)+144;
   if(w*2>16000||h*2>16000||w*h*4>60000000)throw new Error('圖面過大，請收合工項或切換至月／季／年尺度');
   canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);

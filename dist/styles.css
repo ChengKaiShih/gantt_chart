@@ -513,3 +513,10 @@ textarea.note-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-w
 .report-mode .collapse-button,.report-mode .resize-handle {visibility:hidden;}
 .report-mode .schedule-row.selected .task-cell {background:white;box-shadow:none;}
 .report-mode .today-line {display:none;}
+
+/* V2.0.1: wrapped names and user-controlled minimum row heights. */
+textarea.task-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;line-height:20px;font-family:inherit;}
+.row-number {position:relative;}
+.row-resize-handle {position:absolute;left:0;right:0;bottom:-3px;height:8px;cursor:row-resize;z-index:6;touch-action:none;}
+.row-resize-handle:hover {background:#f0a51a;}
+.report-mode .row-resize-handle {visibility:hidden;}
