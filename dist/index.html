@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="以起訖日期、前置關係及時間間隔建立工程甘特圖，並自動計算要徑與總浮時。"
+    />
+    <meta name="theme-color" content="#10233e" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310233e'/%3E%3Cpath d='M7 9h18M7 16h18M7 23h18' stroke='%23d9e2ef' stroke-width='2'/%3E%3Cpath d='M10 7v18M17 7v18M24 7v18' stroke='%234c6789' stroke-width='1'/%3E%3Crect x='11' y='12' width='11' height='7' rx='2' fill='%23f0a51a'/%3E%3C/svg%3E"
+    />
+    <title>工程甘特圖排程工具</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <p class="eyebrow">工程期程管理</p>
+            <input id="projectName" class="project-name" aria-label="專案名稱" />
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="saveStatus" class="save-status">已儲存於此瀏覽器</span>
+          <button class="button button-quiet" id="importButton" type="button">匯入</button>
+          <button class="button button-quiet" id="exportButton" type="button">匯出</button>
+          <button class="button button-quiet" id="sampleButton" type="button">載入範例</button>
+          <input id="importFile" type="file" accept="application/json,.json" hidden />
+        </div>
+      </header>
+
+      <main>
+        <section class="control-deck" aria-label="甘特圖控制列">
+          <div class="task-actions" role="group" aria-label="工項編輯">
+            <button class="button button-primary" id="addTask" type="button">
+              <span aria-hidden="true">＋</span> 新增工項
+            </button>
+            <button class="button" id="addChild" type="button">新增下階工項</button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button class="icon-button" id="moveUp" type="button" title="上移工項" aria-label="上移工項">↑</button>
+            <button class="icon-button" id="moveDown" type="button" title="下移工項" aria-label="下移工項">↓</button>
+            <button class="icon-button indent-icon" id="outdent" type="button" title="取消縮排" aria-label="取消縮排">←</button>
+            <button class="icon-button indent-icon" id="indent" type="button" title="建立下階層級" aria-label="建立下階層級">→</button>
+            <button class="button button-danger-quiet" id="deleteTask" type="button">刪除</button>
+          </div>
+          <div class="scale-control">
+            <span class="scale-label">時間尺度</span>
+            <div id="scaleButtons" class="segmented" role="group" aria-label="選擇時間尺度">
+              <button type="button" data-scale="day">日</button>
+              <button type="button" data-scale="week">週</button>
+              <button type="button" data-scale="month">月</button>
+              <button type="button" data-scale="quarter" class="active">季</button>
+              <button type="button" data-scale="year">年</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="summary-strip" aria-label="排程摘要">
+          <div class="summary-item">
+            <span>計畫期間</span>
+            <strong id="projectRange">—</strong>
+          </div>
+          <div class="summary-item">
+            <span>最下階工項</span>
+            <strong id="leafCount">0</strong>
+          </div>
+          <div class="summary-item critical-summary">
+            <span>要徑工項</span>
+            <strong id="criticalCount">0</strong>
+          </div>
+          <div class="summary-item">
+            <span>網圖計算工期</span>
+            <strong id="networkDuration">—</strong>
+          </div>
+          <div class="legend" aria-label="圖例">
+            <span><i class="legend-bar normal"></i>一般工項</span>
+            <span><i class="legend-bar critical"></i>要徑</span>
+            <span><i class="legend-bar summary"></i>上階彙整</span>
+          </div>
+        </section>
+
+        <div id="alertArea" class="alert-area" aria-live="polite"></div>
+
+        <section class="schedule-card" aria-label="工程甘特圖">
+          <div class="schedule-scroll" id="scheduleScroll">
+            <div id="scheduleGrid" class="schedule-grid"></div>
+          </div>
+        </section>
+        <p class="schedule-note">
+          起訖日均計入工期；上階日期由下階工項自動彙整。要徑依最下階工項的工期、前置關係及時間間隔計算。
+        </p>
+      </main>
+    </div>
+
+    <dialog id="relationDialog" class="relation-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">工項邏輯</p>
+            <h2 id="relationTitle">設定前置工項</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="關閉">×</button>
+        </div>
+        <p class="dialog-help">
+          可加入多個前置工項。正值為延遲，負值為提前；V1 保留你輸入的計畫日期，並另行檢查邏輯衝突。
+        </p>
+        <div id="relationList" class="relation-list"></div>
+        <button type="button" class="button button-primary" id="addRelation">＋ 新增前置關係</button>
+        <div class="relation-guide">
+          <span><strong>FS</strong> 完成後開始</span>
+          <span><strong>SS</strong> 同時開始</span>
+          <span><strong>FF</strong> 同時完成</span>
+          <span><strong>SF</strong> 開始後完成</span>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
