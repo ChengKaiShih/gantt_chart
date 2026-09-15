@@ -1,5 +1,7 @@
 import {
   RELATION_TYPES,
+  autoSchedule,
+  relationWeight,
   addDays,
   computeCPM,
   daysBetween,
@@ -92,6 +94,9 @@ function normalizeProject(value) {
       finish: typeof item.finish === "string" ? item.finish : "",
       notes: typeof item.notes === "string" ? item.notes : "",
       collapsed: Boolean(item.collapsed),
+      milestone: Boolean(item.milestone),
+      duration: item.milestone ? 0 : (item.duration ?? inclusiveDuration(item.start, item.finish)),
+      notBefore: typeof item.notBefore === "string" ? item.notBefore : "",
       predecessors: Array.isArray(item.predecessors)
         ? item.predecessors.map((relation) => ({
             taskId: String(relation.taskId || ""),
@@ -102,6 +107,7 @@ function normalizeProject(value) {
     };
   });
   const validIds = new Set(tasks.map((item) => item.id));
+  if (validIds.size !== tasks.length) throw new Error("工項 ID 不可重複。");
   tasks.forEach((item) => {
     item.predecessors = item.predecessors.filter(
       (relation, index, array) =>
@@ -113,6 +119,8 @@ function normalizeProject(value) {
   return {
     name: typeof value.name === "string" && value.name.trim() ? value.name : "未命名工程期程",
     scale: SCALE_CONFIG[value.scale] ? value.scale : "quarter",
+    rangeMode: value.rangeMode || "auto",
+    columnWidths: value.columnWidths,
     tasks,
   };
 }
@@ -127,6 +135,7 @@ function loadProject() {
 }
 
 let state = loadProject();
+let lastCommitted = structuredClone(state);
 let selectedId = state.tasks[0]?.id || null;
 let relationTaskId = null;
 let toastTimer = null;
@@ -151,6 +160,10 @@ function saveProject() {
 }
 
 function commit({ render = true, message = "" } = {}) {
+  const scheduled = autoSchedule(state.tasks);
+  if (scheduled.ok) state.tasks = scheduled.tasks;
+  else { state = structuredClone(lastCommitted); showToast(scheduled.error); renderApp(); return; }
+  lastCommitted = structuredClone(state);
   saveProject();
   if (render) renderApp();
   if (message) showToast(message);
@@ -201,15 +214,17 @@ function timelineModel(tasks, scale) {
   const bounds = scheduleBounds(tasks);
   let start;
   let finish;
-  if (scale === "day") {
-    start = startOfMonth(bounds.start);
-    finish = endOfMonth(bounds.finish);
+  if (state.rangeMode === "year" || scale === "year") {
+    start = startOfYear(bounds.start); finish = endOfYear(bounds.finish);
+  } else if (scale === "day") {
+    start = bounds.start; finish = bounds.finish;
   } else if (scale === "week") {
-    start = startOfWeek(addDays(bounds.start, -config.pad));
-    finish = addDays(startOfWeek(addDays(bounds.finish, config.pad)), 6);
+    start = startOfWeek(bounds.start); finish = addDays(startOfWeek(bounds.finish), 6);
+  } else if (scale === "month") {
+    start = startOfMonth(bounds.start); finish = endOfMonth(bounds.finish);
   } else {
-    start = startOfYear(addDays(bounds.start, -config.pad));
-    finish = endOfYear(addDays(bounds.finish, config.pad));
+    start = new Date(Date.UTC(bounds.start.getUTCFullYear(), Math.floor(bounds.start.getUTCMonth()/3)*3, 1));
+    finish = addDays(new Date(Date.UTC(bounds.finish.getUTCFullYear(), Math.floor(bounds.finish.getUTCMonth()/3)*3+3, 1)), -1);
   }
   const totalDays = daysBetween(start, finish) + 1;
   const width = Math.max(760, Math.ceil(totalDays * config.pxPerDay));
@@ -290,7 +305,7 @@ function timelineHeader(model) {
 
 function tableHeader() {
   return ["項次", "工作項目", "開始日期", "完成日期", "工期", "前置關係", "浮時", "主要控制／說明"]
-    .map((label) => `<span>${label}</span>`)
+    .map((label, i) => `<span>${label}<i class="resize-handle" data-column="${i}" title="拖曳調整欄寬；雙擊自動適配"></i></span>`)
     .join("");
 }
 
@@ -327,7 +342,7 @@ function renderGrid(displayTasks, cpm) {
     const raw = state.tasks.find((taskItem) => taskItem.id === item.id);
     const summary = isSummaryTask(raw, state.tasks);
     const metric = cpm.metrics?.get(item.id);
-    const duration = inclusiveDuration(item.start, item.finish);
+    const duration = item.milestone ? 0 : inclusiveDuration(item.start, item.finish);
     const selected = item.id === selectedId;
     const conflict = conflictIds.has(item.id);
     const collapseControl = summary
@@ -339,7 +354,7 @@ function renderGrid(displayTasks, cpm) {
     const floatText = summary || !metric ? "—" : `${metric.totalFloat}日`;
     const barLeft = duration === null ? 0 : daysBetween(model.start, parseDate(item.start)) * model.pxPerDay;
     const barWidth = duration === null ? 0 : Math.max(3, duration * model.pxPerDay);
-    const barClass = summary ? "summary" : metric?.critical ? "critical" : "";
+    const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""}`;
     const bar = duration === null
       ? ""
       : `<span class="gantt-bar ${barClass}" style="left:${barLeft}px;width:${barWidth}px" title="${escapeHtml(item.name)}｜${item.start}～${item.finish}｜${duration}日${calculated ? `｜${calculated}` : ""}"></span>`;
@@ -354,10 +369,10 @@ function renderGrid(displayTasks, cpm) {
           </div>
           <div><input class="date-input" type="date" data-field="start" value="${escapeHtml(item.start)}" ${summary ? "disabled" : ""} aria-label="開始日期" /></div>
           <div><input class="date-input" type="date" data-field="finish" value="${escapeHtml(item.finish)}" ${summary ? "disabled" : ""} aria-label="完成日期" /></div>
-          <div class="duration-cell">${duration === null ? "—" : `${duration}日`}</div>
+          <div class="duration-cell">${summary ? `${duration}日` : `<input class="duration-input" type="number" min="${item.milestone ? 0 : 1}" step="1" data-field="duration" value="${duration ?? 1}" aria-label="工期（日曆天）" ${item.milestone ? "disabled" : ""} />`}</div>
           <div class="relation-cell"><button class="relation-button" type="button" data-action="relations" ${summary ? "disabled" : ""}>${summary ? "彙整" : escapeHtml(relationLabel(raw))}</button></div>
           <div class="float-cell ${metric?.critical ? "critical-text" : ""}" title="${escapeHtml(calculated)}">${floatText}</div>
-          <div><input class="note-input" data-field="notes" value="${escapeHtml(raw.notes)}" aria-label="主要控制或說明" /></div>
+          <div><textarea class="note-input" data-field="notes" aria-label="主要控制或說明">${escapeHtml(raw.notes)}</textarea></div>
         </div>
         <div class="timeline-cell" style="--grid-size:${primaryDays * model.pxPerDay}px;--minor-grid-size:${minorDays * model.pxPerDay}px">
           ${todayHtml}${bar}
@@ -374,6 +389,9 @@ function renderGrid(displayTasks, cpm) {
   }
   elements.scheduleGrid.innerHTML = html;
   elements.scheduleGrid.style.setProperty("--timeline-width", `${model.width}px`);
+  applyWidths();
+  fitRows();
+  drawArrows(model, displayTasks);
 }
 
 function renderSummary(displayTasks, cpm) {
@@ -415,6 +433,8 @@ function updateButtonStates() {
 }
 
 function renderApp() {
+  const scheduled = autoSchedule(state.tasks);
+  if (scheduled.ok) state.tasks = scheduled.tasks;
   const displayTasks = deriveSummaryDates(state.tasks);
   const cpm = computeCPM(state.tasks);
   elements.projectName.value = state.name;
@@ -423,6 +443,7 @@ function renderApp() {
   });
   renderSummary(displayTasks, cpm);
   renderAlert(cpm);
+  if (!scheduled.ok) elements.alertArea.innerHTML = `<div class="alert">${escapeHtml(scheduled.error)}</div>`;
   renderGrid(displayTasks, cpm);
   updateButtonStates();
 }
@@ -534,6 +555,7 @@ function openRelations(id) {
   const item = state.tasks.find((taskItem) => taskItem.id === id);
   if (!item || isSummaryTask(item, state.tasks)) return;
   relationTaskId = id;
+  renderApp();
   renderRelationDialog();
   elements.relationDialog.showModal();
 }
@@ -549,6 +571,9 @@ function renderRelationDialog() {
   if (!item) return;
   elements.relationTitle.textContent = `設定「${item.name}」的前置工項`;
   const candidates = relationCandidates(item);
+  $("#relationResult").textContent = `排程結果：${item.start} 開始 → ${item.finish} 完成，工期 ${item.milestone ? 0 : item.duration ?? inclusiveDuration(item.start,item.finish)} 日。多個前置條件取最晚允許日期。`;
+  $("#notBefore").value = item.notBefore || "";
+  $("#relationError").textContent = "";
   if (!item.predecessors.length) {
     elements.relationList.innerHTML = `<div class="relation-empty">尚未設定前置工項，此工項將視為網圖起始工項。</div>`;
     return;
@@ -566,6 +591,7 @@ function renderRelationDialog() {
         <select data-relation-field="type" aria-label="關係類型">${types}</select>
         <input data-relation-field="lag" type="number" step="1" value="${Number(relation.lag) || 0}" aria-label="時間間隔（日）" title="時間間隔（日）" />
         <button class="remove-relation" type="button" data-action="remove-relation" aria-label="移除前置關係">×</button>
+        <p class="relation-explanation">${escapeHtml(explainRelation(item, relation))}</p>
       </div>`;
   }).join("");
 }
@@ -580,22 +606,21 @@ function addRelation() {
     return;
   }
   item.predecessors.push(rel(candidate.id, "FS", 0));
-  saveProject();
-  renderRelationDialog();
-  renderApp();
+  const trial = autoSchedule(state.tasks);
+  if (!trial.ok) { item.predecessors.pop(); relationError(trial.error); return; }
+  state.tasks = trial.tasks; commit(); renderRelationDialog();
 }
 
 function removeRelation(index) {
   const item = state.tasks.find((taskItem) => taskItem.id === relationTaskId);
   if (!item) return;
   item.predecessors.splice(index, 1);
-  saveProject();
+  commit();
   renderRelationDialog();
-  renderApp();
 }
 
 function exportProject() {
-  const contents = JSON.stringify({ format: "engineering-gantt-v1", exportedAt: new Date().toISOString(), ...state }, null, 2);
+  const contents = JSON.stringify({ format: "engineering-gantt-v2", exportedAt: new Date().toISOString(), ...state }, null, 2);
   const blob = new Blob([contents], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -610,6 +635,9 @@ function exportProject() {
 async function importProject(file) {
   try {
     const imported = normalizeProject(JSON.parse(await file.text()));
+    const checked = autoSchedule(imported.tasks);
+    if (!checked.ok) throw new Error(checked.error);
+    imported.tasks = checked.tasks;
     state = imported;
     selectedId = state.tasks[0]?.id || null;
     commit({ message: "專案資料已匯入" });
@@ -646,7 +674,15 @@ elements.scheduleGrid.addEventListener("change", (event) => {
   const row = event.target.closest(".schedule-row[data-id]");
   if (!field || !row) return;
   const item = state.tasks.find((taskItem) => taskItem.id === row.dataset.id);
-  item[field] = event.target.value;
+  const before = structuredClone(state.tasks);
+  if (field === "duration") item.duration = Number(event.target.value);
+  else if (field === "start") { item.start = event.target.value; item.notBefore = event.target.value; }
+  else if (field === "finish") {
+    item.duration = inclusiveDuration(item.start, event.target.value);
+    if (item.duration === null) { state.tasks = before; showToast("完成日不得早於開始日。"); renderApp(); return; }
+  } else item[field] = event.target.value;
+  const trial = autoSchedule(state.tasks);
+  if (!trial.ok) { state.tasks = before; showToast(trial.error); renderApp(); return; }
   commit();
 });
 
@@ -699,9 +735,12 @@ elements.relationList.addEventListener("change", (event) => {
     renderRelationDialog();
     return;
   }
+  const before = structuredClone(item.predecessors);
   item.predecessors[index][field] = value;
-  saveProject();
-  renderApp();
+  const trial = autoSchedule(state.tasks);
+  if (!trial.ok) { item.predecessors = before; renderRelationDialog(); relationError(trial.error); return; }
+  state.tasks = trial.tasks;
+  commit(); renderRelationDialog();
 });
 
 function registerWebMcpTools() {
@@ -765,5 +804,142 @@ function registerWebMcpTools() {
   });
 }
 
+setupV2();
 renderApp();
 registerWebMcpTools();
+
+function relationError(message) { $("#relationError").textContent = message; }
+function explainRelation(item, r) {
+  const pre = state.tasks.find(t => t.id === r.taskId);
+  if (!pre) return "請選擇有效的前置工項。";
+  const pd = pre.milestone ? 0 : pre.duration ?? inclusiveDuration(pre.start,pre.finish);
+  const d = item.milestone ? 0 : item.duration ?? inclusiveDuration(item.start,item.finish);
+  const start = formatDate(addDays(pre.start, relationWeight(r.type,pd,d,Number(r.lag))));
+  const end = formatDate(addDays(start,Math.max(1,d)-1));
+  const source = r.type[0] === 'F' ? '完成日' : '開始日';
+  const target = r.type[1] === 'F' ? '完成日' : '開始日';
+  const lag = Number(r.lag);
+  const phrase = r.type === 'FS' && !pre.milestone ? `完成隔日起${lag >= 0 ? '延後' : '提前'} ${Math.abs(lag)} 日` : `${source}${lag >= 0 ? '加' : '減'} ${Math.abs(lag)} 日`;
+  return `「${pre.name}」${phrase}：本工項${target}不得早於 ${r.type[1] === 'F' ? end : start}。依此條件推算 ${start}～${end}；實際排程須同時滿足其他關係及日期限制。`;
+}
+function widths() { return state.columnWidths || [44,228,112,112,72,106,62,220]; }
+function applyWidths() {
+  document.documentElement.style.setProperty('--columns', widths().map(n=>`${n}px`).join(' '));
+  document.documentElement.style.setProperty('--left-width',`${widths().reduce((a,b)=>a+b,0)}px`);
+}
+function fitRows() {
+  elements.scheduleGrid.querySelectorAll('.note-input').forEach(el=>{
+    el.style.height='auto'; el.style.height=`${Math.max(34,el.scrollHeight)}px`;
+  });
+}
+function arrowPaths() {
+  return [...elements.scheduleGrid.querySelectorAll('.dependency-path')].map(p=>({d:p.getAttribute('d'),color:p.getAttribute('stroke')}));
+}
+function drawArrows(model, tasks) {
+  elements.scheduleGrid.querySelector('.dependency-layer')?.remove();
+  if (!$('#showArrows').checked) return;
+  const gridRect = elements.scheduleGrid.getBoundingClientRect();
+  const rows = new Map([...elements.scheduleGrid.querySelectorAll('[data-id]')].map(row=>[row.dataset.id,row]));
+  const points = new Map();
+  rows.forEach((row,id)=>{
+    const t=tasks.find(t=>t.id===id), rect=row.getBoundingClientRect();
+    const x=widths().reduce((a,b)=>a+b,0)+daysBetween(model.start,t.start)*model.pxPerDay;
+    points.set(id,{s:x,f:x+(t.milestone?0:inclusiveDuration(t.start,t.finish)*model.pxPerDay),y:rect.top-gridRect.top+rect.height/2});
+  });
+  let paths='';
+  tasks.forEach(t=>(t.predecessors||[]).forEach(r=>{
+    const a=points.get(r.taskId), b=points.get(t.id); if(!a||!b) return;
+    const x1=r.type[0]==='F'?a.f:a.s, x2=r.type[1]==='F'?b.f:b.s;
+    const bend=Math.max(2,Math.min(x1,x2)-10);
+    const d=`M ${x1} ${a.y} L ${bend} ${a.y} L ${bend} ${b.y} L ${x2} ${b.y}`;
+    paths+=`<path class="dependency-path" d="${d}" fill="none" stroke="#63819b" stroke-width="1.2" marker-end="url(#arrow)"/>`;
+  }));
+  elements.scheduleGrid.insertAdjacentHTML('beforeend',`<svg class="dependency-layer" width="${model.width+widths().reduce((a,b)=>a+b,0)}" height="${elements.scheduleGrid.offsetHeight}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#63819b"/></marker></defs>${paths}</svg>`);
+}
+function setupV2() {
+  $('#rangeMode').value=state.rangeMode || 'auto';
+  $('#rangeMode').onchange=e=>{state.rangeMode=e.target.value;commit();};
+  $('#showArrows').onchange=()=>renderApp();
+  $('#reportMode').onchange=e=>document.body.classList.toggle('report-mode',e.target.checked);
+  $('#milestoneToggle').onclick=()=>{
+    const t=currentTask(); if(!t||isSummaryTask(t,state.tasks)) {showToast('請選擇最下階工項。');return;}
+    t.milestone=!t.milestone; t.duration=t.milestone?0:1; commit();
+  };
+  $('#notBefore').onchange=e=>{
+    const t=state.tasks.find(t=>t.id===relationTaskId); if(!t)return;
+    t.notBefore=e.target.value; commit();renderRelationDialog();
+  };
+  $('#downloadPng').onclick=()=>exportImage(false);
+  $('#copyPng').onclick=()=>exportImage(true);
+  elements.scheduleGrid.addEventListener('pointerdown',e=>{
+    const handle=e.target.closest('.resize-handle'); if(!handle)return;
+    e.preventDefault(); const index=Number(handle.dataset.column), initial=e.clientX, original=widths()[index];
+    const move=ev=>{state.columnWidths=[...widths()];state.columnWidths[index]=Math.max(44,Math.min(700,original+ev.clientX-initial));applyWidths();fitRows();};
+    const end=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);commit();};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',end);
+  });
+  elements.scheduleGrid.addEventListener('dblclick',e=>{
+    const h=e.target.closest('.resize-handle');if(!h)return;
+    const i=Number(h.dataset.column), c=document.createElement('canvas').getContext('2d');c.font='13px "Microsoft JhengHei", sans-serif';
+    const cells=[...elements.scheduleGrid.querySelectorAll('.task-cell')].map(el=>el.children[i]).filter(Boolean);
+    state.columnWidths=[...widths()];state.columnWidths[i]=Math.min(600,Math.max(80,...cells.map(el=>c.measureText(el.querySelector('input,textarea')?.value||el.textContent).width+40)));commit();
+  });
+}
+function wrapText(ctx,text,width) {
+  const lines=[]; for(const paragraph of String(text).split('\n')) {
+    let line='';for(const ch of paragraph){if(line && ctx.measureText(line+ch).width>width){lines.push(line);line='';}line+=ch;}lines.push(line);
+  }return lines;
+}
+async function exportImage(copy) {
+  try {
+    const blobPromise=renderPng();
+    if(copy && navigator.clipboard?.write && globalThis.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({'image/png':blobPromise})]);showToast('圖片已複製，可貼入 Word 或 PowerPoint');
+    } else {
+      const blob=await blobPromise, url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=`${state.name.replace(/[\\/:*?"<>|]/g,'-')}-V2.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      showToast(copy?'瀏覽器不支援複製，已改為下載 PNG':'PNG 已下載');
+    }
+  }catch(e){showToast(`圖片輸出失敗：${e.message}。可嘗試下載 PNG 或改用較大時間尺度。`);}
+}
+async function renderPng() {
+  await document.fonts.ready;
+  const tasks=deriveSummaryDates(state.tasks), model=timelineModel(tasks,state.scale), cpm=computeCPM(state.tasks);
+  const left=$('#exportScope').value==='chart'?0:widths().reduce((a,b)=>a+b,0);
+  const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
+  ctx.font='13px "Microsoft JhengHei", sans-serif';
+  const rows=visibleTasks(tasks).map(t=>({t, lines:wrapText(ctx,t.notes||'',widths()[7]-16),nameLines:wrapText(ctx,t.name,widths()[1]-20-t.level*16)}));
+  rows.forEach(r=>r.h=Math.max(48,(Math.max(r.lines.length,r.nameLines.length))*20+16));
+  const w=left+model.width+32,h=rows.reduce((n,r)=>n+r.h,0)+144;
+  if(w*2>16000||h*2>16000||w*h*4>60000000)throw new Error('圖面過大，請收合工項或切換至月／季／年尺度');
+  canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='#10233e';ctx.font='bold 20px "Microsoft JhengHei", sans-serif';ctx.fillText(state.name,16,30);
+  ctx.font='12px "Microsoft JhengHei", sans-serif';ctx.fillText('一般工項：金色　要徑：紅色　里程碑：◆　工期：日曆天',16,54);
+  ctx.translate(16,64);ctx.fillStyle='#183454';ctx.fillRect(0,0,w-32,72);
+  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{ctx.fillStyle='#fff';ctx.fillText(label,x+6,40);x+=widths()[i];});}
+  const header=document.createElement('div');header.innerHTML=timelineHeader(model);
+  header.querySelectorAll('.time-segment').forEach(el=>{
+    const x=left+parseFloat(el.style.left),sw=parseFloat(el.style.width),top=el.parentElement.classList.contains('top');
+    ctx.strokeStyle='#60738a';ctx.strokeRect(x,top?0:36,sw,36);ctx.fillStyle=top?'#f8d88e':'#fff';ctx.save();ctx.beginPath();ctx.rect(x,top?0:36,sw,36);ctx.clip();ctx.fillText(el.textContent,x+Math.max(3,(sw-ctx.measureText(el.textContent).width)/2),top?23:59);ctx.restore();
+  });
+  let y=72;const coords=new Map(),wbs=wbsNumbers(state.tasks);
+  rows.forEach(({t,lines,nameLines,h:rh},i)=>{
+    ctx.fillStyle=isSummaryTask(t,tasks)?'#e9eff5':i%2?'#fff':'#f7f9fb';ctx.fillRect(0,y,w-32,rh);
+    ctx.strokeStyle='#dce3eb';ctx.strokeRect(0,y,w-32,rh);
+    if(left){let x=0;const values=[wbs.get(t.id),nameLines,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,relationLabel(t),`${cpm.metrics.get(t.id)?.totalFloat??'—'}`,lines];
+      values.forEach((v,j)=>{ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();(Array.isArray(v)?v:[v]).forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),y+22+k*20));ctx.restore();x+=widths()[j];});}
+    header.querySelectorAll('.bottom .time-segment').forEach(el=>{const x=left+parseFloat(el.style.left);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+rh);ctx.stroke();});
+    const x=left+daysBetween(model.start,t.start)*model.pxPerDay,bw=t.milestone?0:inclusiveDuration(t.start,t.finish)*model.pxPerDay;
+    coords.set(t.id,{s:x,f:x+bw,y:y+rh/2});y+=rh;
+  });
+  if($('#showArrows').checked)rows.forEach(({t})=>(t.predecessors||[]).forEach(r=>{
+    const a=coords.get(r.taskId),b=coords.get(t.id);if(!a||!b)return;const x1=r.type[0]==='F'?a.f:a.s,x2=r.type[1]==='F'?b.f:b.s,bend=Math.max(left+1,Math.min(x1,x2)-10);
+    ctx.strokeStyle='#63819b';ctx.beginPath();ctx.moveTo(x1,a.y);ctx.lineTo(bend,a.y);ctx.lineTo(bend,b.y);ctx.lineTo(x2,b.y);ctx.stroke();ctx.beginPath();ctx.moveTo(x2-5,b.y-3);ctx.lineTo(x2,b.y);ctx.lineTo(x2-5,b.y+3);ctx.stroke();
+  }));
+  rows.forEach(({t})=>{const c=coords.get(t.id);ctx.fillStyle=cpm.metrics.get(t.id)?.critical?'#c83f43':'#f0a51a';
+    if(t.milestone){ctx.beginPath();ctx.moveTo(c.s,c.y-7);ctx.lineTo(c.s+7,c.y);ctx.lineTo(c.s,c.y+7);ctx.lineTo(c.s-7,c.y);ctx.closePath();ctx.fill();}
+    else if(isSummaryTask(t,tasks)){ctx.fillStyle='#365b78';ctx.fillRect(c.s,c.y-3,c.f-c.s,6);ctx.fillRect(c.s,c.y-3,3,12);ctx.fillRect(c.f-3,c.y-3,3,12);}
+    else ctx.fillRect(c.s,c.y-10,Math.max(2,c.f-c.s),20);
+  });
+  return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('無法產生圖片')),'image/png'));
+}

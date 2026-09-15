@@ -24,14 +24,14 @@
             <span></span><span></span><span></span>
           </div>
           <div>
-            <p class="eyebrow">工程期程管理</p>
+            <p class="eyebrow">工程期程工具 · V2.0</p>
             <input id="projectName" class="project-name" aria-label="專案名稱" />
           </div>
         </div>
         <div class="topbar-actions">
           <span id="saveStatus" class="save-status">已儲存於此瀏覽器</span>
-          <button class="button button-quiet" id="importButton" type="button">匯入</button>
-          <button class="button button-quiet" id="exportButton" type="button">匯出</button>
+          <button class="button button-quiet" id="importButton" type="button">匯入 JSON</button>
+          <button class="button button-quiet" id="exportButton" type="button">備份 JSON</button>
           <button class="button button-quiet" id="sampleButton" type="button">載入範例</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
         </div>
@@ -44,14 +44,14 @@
               <span aria-hidden="true">＋</span> 新增工項
             </button>
             <button class="button" id="addChild" type="button">新增下階工項</button>
-            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button class="button" id="milestoneToggle" type="button">切換里程碑</button><span class="toolbar-divider" aria-hidden="true"></span>
             <button class="icon-button" id="moveUp" type="button" title="上移工項" aria-label="上移工項">↑</button>
             <button class="icon-button" id="moveDown" type="button" title="下移工項" aria-label="下移工項">↓</button>
             <button class="icon-button indent-icon" id="outdent" type="button" title="取消縮排" aria-label="取消縮排">←</button>
             <button class="icon-button indent-icon" id="indent" type="button" title="建立下階層級" aria-label="建立下階層級">→</button>
             <button class="button button-danger-quiet" id="deleteTask" type="button">刪除</button>
           </div>
-          <div class="scale-control">
+          <div class="scale-control"><select id="rangeMode" aria-label="時間範圍"><option value="auto">自動範圍</option><option value="year">完整年度</option></select>
             <span class="scale-label">時間尺度</span>
             <div id="scaleButtons" class="segmented" role="group" aria-label="選擇時間尺度">
               <button type="button" data-scale="day">日</button>
@@ -87,7 +87,7 @@
           </div>
         </section>
 
-        <div id="alertArea" class="alert-area" aria-live="polite"></div>
+        <div class="export-controls"><label><input type="checkbox" id="showArrows" checked /> 前置箭頭</label><label><input type="checkbox" id="reportMode" /> 報告預覽</label><select id="exportScope" aria-label="圖片範圍"><option value="full">工項表格＋甘特圖</option><option value="chart">僅甘特圖</option></select><button class="button" id="downloadPng">下載 PNG</button><button class="button" id="copyPng">複製圖片</button></div><div id="alertArea" class="alert-area" aria-live="polite"></div>
 
         <section class="schedule-card" aria-label="工程甘特圖">
           <div class="schedule-scroll" id="scheduleScroll">
@@ -110,14 +110,14 @@
           <button class="dialog-close" value="close" aria-label="關閉">×</button>
         </div>
         <p class="dialog-help">
-          可加入多個前置工項。正值為延遲，負值為提前；V1 保留你輸入的計畫日期，並另行檢查邏輯衝突。
+          可加入多個前置工項，日期會自動連動。FS＋0 為完成隔日開始；SS＋0 為同日開始，FF＋0 為同日完成。正值為延遲，負值為提前。
         </p>
-        <div id="relationList" class="relation-list"></div>
+        <label>不得早於（可留空） <input type="date" id="notBefore" /></label><p id="relationError" class="inline-error" role="alert"></p><p id="relationResult" class="relation-result" aria-live="polite"></p><div id="relationList" class="relation-list"></div>
         <button type="button" class="button button-primary" id="addRelation">＋ 新增前置關係</button>
         <div class="relation-guide">
           <span><strong>FS</strong> 完成後開始</span>
-          <span><strong>SS</strong> 同時開始</span>
-          <span><strong>FF</strong> 同時完成</span>
+          <span><strong>SS</strong> 開始→開始</span>
+          <span><strong>FF</strong> 完成→完成</span>
           <span><strong>SF</strong> 開始後完成</span>
         </div>
       </form>

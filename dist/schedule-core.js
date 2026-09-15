@@ -79,11 +79,11 @@ export function deriveSummaryDates(tasks) {
   return output;
 }
 
-function relationWeight(type, predecessorDuration, successorDuration, lag) {
+export function relationWeight(type, predecessorDuration, successorDuration, lag) {
   switch (type) {
     case "SS": return lag;
-    case "FF": return predecessorDuration + lag - successorDuration;
-    case "SF": return lag - successorDuration;
+    case "FF": return Math.max(1, predecessorDuration) + lag - Math.max(1, successorDuration);
+    case "SF": return lag - Math.max(1, successorDuration) + 1;
     case "FS":
     default: return predecessorDuration + lag;
   }
@@ -94,7 +94,7 @@ export function computeCPM(tasks) {
   const usable = leaves.filter((task) => inclusiveDuration(task.start, task.finish) !== null);
   const byId = new Map(usable.map((task) => [task.id, task]));
   const durations = new Map(
-    usable.map((task) => [task.id, inclusiveDuration(task.start, task.finish)]),
+    usable.map((task) => [task.id, task.milestone ? 0 : inclusiveDuration(task.start, task.finish)]),
   );
   const incoming = new Map(usable.map((task) => [task.id, []]));
   const outgoing = new Map(usable.map((task) => [task.id, []]));
@@ -152,17 +152,15 @@ export function computeCPM(tasks) {
     };
   }
 
-  const earliest = new Map(usable.map((task) => [task.id, 0]));
+  let minimumStart = Math.min(...usable.map(t => parseDate(t.start).getTime()));
+  if (!Number.isFinite(minimumStart)) minimumStart = Date.now();
+  const earliest = new Map(usable.map(t => [t.id, daysBetween(new Date(minimumStart), t.start)]));
   order.forEach((id) => {
     incoming.get(id).forEach((edge) => {
       earliest.set(id, Math.max(earliest.get(id), earliest.get(edge.from) + edge.weight));
     });
   });
 
-  let minimumStart = Math.min(
-    ...usable.map((task) => parseDate(task.start)?.getTime() ?? Number.POSITIVE_INFINITY),
-  );
-  if (!Number.isFinite(minimumStart)) minimumStart = Date.now();
   const projectDuration = Math.max(
     0,
     ...usable.map((task) => earliest.get(task.id) + durations.get(task.id)),
@@ -190,7 +188,7 @@ export function computeCPM(tasks) {
       totalFloat: ls - es,
       critical: Math.abs(ls - es) < 1e-9,
       calculatedStart: formatDate(new Date(minimumStart + es * DAY_MS)),
-      calculatedFinish: formatDate(new Date(minimumStart + (es + duration - 1) * DAY_MS)),
+      calculatedFinish: formatDate(new Date(minimumStart + (es + Math.max(1, duration) - 1) * DAY_MS)),
     });
   });
 
@@ -244,4 +242,36 @@ export function scheduleBounds(tasks) {
   const minimum = valid.reduce((value, task) => (task.start < value ? task.start : value), valid[0].start);
   const maximum = valid.reduce((value, task) => (task.finish > value ? task.finish : value), valid[0].finish);
   return { start: parseDate(minimum), finish: parseDate(maximum) };
+}
+
+// Date-only scheduling: ordinary tasks occupy inclusive days; milestones are boundary events.
+export function autoSchedule(tasks) {
+  const result = tasks.map(t => ({...t}));
+  const leaves = result.filter(t => !isSummaryTask(t, result));
+  const byId = new Map(leaves.map(t => [t.id, t]));
+  const visited = new Set(), active = new Set();
+  function visit(t) {
+    if (visited.has(t.id)) return;
+    if (active.has(t.id)) throw new Error(`「${t.name}」的前置關係形成循環，請移除此關係。`);
+    active.add(t.id);
+    const duration = t.milestone ? 0 : Number(t.duration ?? inclusiveDuration(t.start, t.finish));
+    if (!Number.isInteger(duration) || (!t.milestone && duration < 1)) throw new Error(`「${t.name}」工期須為至少 1 個完整日曆天。`);
+    let start = parseDate(t.notBefore || ((t.predecessors || []).length ? '' : t.start));
+    for (const r of t.predecessors || []) {
+      const pre = byId.get(r.taskId);
+      if (!pre) throw new Error(`「${t.name}」的前置工項不存在或已成為上階工項。`);
+      if (!Number.isInteger(Number(r.lag))) throw new Error('時間間隔須為整數日曆天。');
+      visit(pre);
+      const preDuration = pre.milestone ? 0 : pre.duration;
+      const required = addDays(pre.start, relationWeight(r.type, preDuration, duration, Number(r.lag)));
+      if (!start || required > start) start = required;
+    }
+    if (!start) throw new Error(`請為「${t.name}」設定開始日期或前置工項。`);
+    t.duration = duration;
+    t.start = formatDate(start);
+    t.finish = formatDate(addDays(start, Math.max(1, duration) - 1));
+    active.delete(t.id); visited.add(t.id);
+  }
+  try { leaves.forEach(visit); return {ok:true, tasks:result}; }
+  catch (error) { return {ok:false, error:error.message}; }
 }
