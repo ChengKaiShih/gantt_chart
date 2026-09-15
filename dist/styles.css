@@ -520,3 +520,11 @@ textarea.task-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-w
 .row-resize-handle {position:absolute;left:0;right:0;bottom:-3px;height:8px;cursor:row-resize;z-index:6;touch-action:none;}
 .row-resize-handle:hover {background:#f0a51a;}
 .report-mode .row-resize-handle {visibility:hidden;}
+
+/* Uniform timeline units, with drag handles on the lower date header. */
+.schedule-grid {min-width:calc(var(--left-width) + var(--timeline-width));}
+.time-resize-handle {display:none;}
+.bottom .time-resize-handle {display:block;position:absolute;right:0;top:0;bottom:0;width:8px;cursor:col-resize;touch-action:none;}
+.bottom .time-resize-handle:hover {background:#f0a51a;}
+.timeline-cell::after {display:none;}
+.report-mode .time-resize-handle {visibility:hidden;}

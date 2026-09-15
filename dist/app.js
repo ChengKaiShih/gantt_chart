@@ -122,6 +122,7 @@ function normalizeProject(value) {
     scale: SCALE_CONFIG[value.scale] ? value.scale : "quarter",
     rangeMode: value.rangeMode || "auto",
     columnWidths: value.columnWidths,
+    timelineWidths: Object.fromEntries(Object.entries(value.timelineWidths || {}).filter(([key,val]) => SCALE_CONFIG[key] && Number.isFinite(val)).map(([key,val]) => [key,Math.max(24,Math.min(400,val))])),
     tasks,
   };
 }
@@ -227,10 +228,29 @@ function timelineModel(tasks, scale) {
     start = new Date(Date.UTC(bounds.start.getUTCFullYear(), Math.floor(bounds.start.getUTCMonth()/3)*3, 1));
     finish = addDays(new Date(Date.UTC(bounds.finish.getUTCFullYear(), Math.floor(bounds.finish.getUTCMonth()/3)*3+3, 1)), -1);
   }
+  if (scale === 'week') { start=startOfWeek(start); finish=addDays(startOfWeek(finish),6); }
   const totalDays = daysBetween(start, finish) + 1;
-  const width = Math.max(760, Math.ceil(totalDays * config.pxPerDay));
-  const actualPxPerDay = width / totalDays;
-  return { ...config, scale, start, finish, totalDays, width, pxPerDay: actualPxPerDay };
+  const units = timeUnitPosition(addDays(finish,1),scale)-timeUnitPosition(start,scale);
+  const unitWidth=state.timelineWidths?.[scale] || Math.min(400,Math.max(24,Math.max(760,totalDays*config.pxPerDay)/units));
+  const width=units*unitWidth;
+  return { ...config, scale, start, finish, totalDays, width, unitWidth };
+}
+
+function timeUnitPosition(value,scale) {
+  const date=typeof value === 'string'?parseDate(value):value;
+  if (!date) return 0;
+  if(scale==='day'||scale==='week')return date.getTime()/86400000/(scale==='week'?7:1);
+  const span=scale==='month'?1:scale==='quarter'?3:12;
+  const month=Math.floor(date.getUTCMonth()/span)*span;
+  const start=new Date(Date.UTC(date.getUTCFullYear(),month,1));
+  const end=new Date(Date.UTC(date.getUTCFullYear(),month+span,1));
+  return (date.getUTCFullYear()*12+month)/span+daysBetween(start,date)/daysBetween(start,end);
+}
+function timelineX(model,date) {
+  return (timeUnitPosition(date,model.scale)-timeUnitPosition(model.start,model.scale))*model.unitWidth;
+}
+function timelineBarWidth(model,t) {
+  return t.milestone?0:timelineX(model,addDays(t.finish,1))-timelineX(model,t.start);
 }
 
 function monthLabel(date) {
@@ -238,12 +258,10 @@ function monthLabel(date) {
 }
 
 function segment(start, finishExclusive, model, label) {
-  const leftDays = daysBetween(model.start, start);
-  const widthDays = daysBetween(start, finishExclusive);
-  const left = Math.max(0, leftDays * model.pxPerDay);
-  const right = Math.min(model.width, (leftDays + widthDays) * model.pxPerDay);
+  const left = Math.max(0, timelineX(model,start));
+  const right = Math.min(model.width, timelineX(model,finishExclusive));
   if (right <= left) return "";
-  return `<span class="time-segment" style="left:${left}px;width:${right - left}px">${escapeHtml(label)}</span>`;
+  return `<span class="time-segment" style="left:${left}px;width:${right - left}px">${escapeHtml(label)}<i class="time-resize-handle" title="拖曳同步調整時間格寬；雙擊恢復預設"></i></span>`;
 }
 
 function monthSegments(model, row = "bottom") {
@@ -328,7 +346,7 @@ function renderGrid(displayTasks, cpm) {
   const today = parseDate(formatDate(new Date()));
   const todayOffset = today ? daysBetween(model.start, today) : -1;
   const todayHtml = todayOffset >= 0 && todayOffset < model.totalDays
-    ? `<span class="today-line" style="left:${todayOffset * model.pxPerDay}px" title="今天"></span>`
+    ? `<span class="today-line" style="left:${timelineX(model,today)}px" title="今天"></span>`
     : "";
   const primaryDays = model.scale === "day" ? 1 : model.scale === "week" ? 7 : model.scale === "month" ? 30 : model.scale === "quarter" ? 91 : 365;
   const minorDays = model.scale === "day" ? 1 : model.scale === "week" ? 1 : model.scale === "month" ? 7 : model.scale === "quarter" ? 30 : 91;
@@ -353,8 +371,8 @@ function renderGrid(displayTasks, cpm) {
       ? `系統計算：${metric.calculatedStart}～${metric.calculatedFinish}；總浮時 ${metric.totalFloat} 日`
       : "";
     const floatText = summary || !metric ? "—" : `${metric.totalFloat}日`;
-    const barLeft = duration === null ? 0 : daysBetween(model.start, parseDate(item.start)) * model.pxPerDay;
-    const barWidth = duration === null ? 0 : Math.max(3, duration * model.pxPerDay);
+    const barLeft = duration === null ? 0 : timelineX(model,item.start);
+    const barWidth = duration === null ? 0 : Math.max(3, timelineBarWidth(model,item));
     const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""}`;
     const bar = duration === null
       ? ""
@@ -375,7 +393,7 @@ function renderGrid(displayTasks, cpm) {
           <div class="float-cell ${metric?.critical ? "critical-text" : ""}" title="${escapeHtml(calculated)}">${floatText}</div>
           <div><textarea class="note-input" data-field="notes" aria-label="主要控制或說明">${escapeHtml(raw.notes)}</textarea></div>
         </div>
-        <div class="timeline-cell" style="--grid-size:${primaryDays * model.pxPerDay}px;--minor-grid-size:${minorDays * model.pxPerDay}px">
+        <div class="timeline-cell" style="--grid-size:${model.unitWidth}px;--minor-grid-size:${model.unitWidth}px">
           ${todayHtml}${bar}
         </div>
       </div>`;
@@ -856,8 +874,8 @@ function drawArrows(model, tasks) {
   const points = new Map();
   rows.forEach((row,id)=>{
     const t=tasks.find(t=>t.id===id), rect=row.getBoundingClientRect();
-    const x=widths().reduce((a,b)=>a+b,0)+daysBetween(model.start,t.start)*model.pxPerDay;
-    points.set(id,{s:x,f:x+(t.milestone?0:inclusiveDuration(t.start,t.finish)*model.pxPerDay),y:rect.top-gridRect.top+rect.height/2});
+    const x=widths().reduce((a,b)=>a+b,0)+timelineX(model,t.start);
+    points.set(id,{s:x,f:x+(t.milestone?0:timelineBarWidth(model,t)),y:rect.top-gridRect.top+rect.height/2});
   });
   let paths='';
   tasks.forEach(t=>(t.predecessors||[]).forEach(r=>{
@@ -870,6 +888,23 @@ function drawArrows(model, tasks) {
   elements.scheduleGrid.insertAdjacentHTML('beforeend',`<svg class="dependency-layer" width="${model.width+widths().reduce((a,b)=>a+b,0)}" height="${elements.scheduleGrid.offsetHeight}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#63819b"/></marker></defs>${paths}</svg>`);
 }
 function setupV2() {
+  elements.scheduleGrid.addEventListener('pointerdown',e=>{
+    const handle=e.target.closest('.bottom .time-resize-handle');if(!handle)return;
+    e.preventDefault();
+    const scale=state.scale,model=timelineModel(deriveSummaryDates(state.tasks),scale),initial=e.clientX;
+    const scroll=$('#scheduleScroll'),scrollLeft=scroll.scrollLeft;
+    const move=ev=>{
+      state.timelineWidths ||= {};
+      state.timelineWidths[scale]=Math.max(24,Math.min(400,model.unitWidth+ev.clientX-initial));
+      renderApp();scroll.scrollLeft=scrollLeft;
+    };
+    const end=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);window.removeEventListener('pointercancel',end);commit();};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',end);window.addEventListener('pointercancel',end);
+  });
+  elements.scheduleGrid.addEventListener('dblclick',e=>{
+    if(!e.target.closest('.bottom .time-resize-handle'))return;
+    if(state.timelineWidths)delete state.timelineWidths[state.scale];commit();
+  });
   $('#rangeMode').value=state.rangeMode || 'auto';
   $('#rangeMode').onchange=e=>{state.rangeMode=e.target.value;commit();};
   $('#showArrows').onchange=()=>renderApp();
@@ -941,7 +976,8 @@ async function exportImage(copy) {
 async function renderPng() {
   await document.fonts.ready;
   const tasks=deriveSummaryDates(state.tasks), model=timelineModel(tasks,state.scale), cpm=computeCPM(state.tasks);
-  const left=$('#exportScope').value==='chart'?0:widths().reduce((a,b)=>a+b,0);
+  const exportColumns=[0,1,2,3,4,7];
+  const left=$('#exportScope').value==='chart'?0:exportColumns.reduce((sum,i)=>sum+widths()[i],0);
   const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
   ctx.font='13px "Microsoft JhengHei", sans-serif';
   const rows=visibleTasks(tasks).map(t=>({t, lines:wrapText(ctx,t.notes||'',widths()[7]-16),nameLines:wrapText(ctx,t.name,widths()[1]-20-t.level*16)}));
@@ -952,7 +988,7 @@ async function renderPng() {
   ctx.fillStyle='#10233e';ctx.font='bold 20px "Microsoft JhengHei", sans-serif';ctx.fillText(state.name,16,30);
   ctx.font='12px "Microsoft JhengHei", sans-serif';ctx.fillText('一般工項：金色　要徑：紅色　里程碑：◆　工期：日曆天',16,54);
   ctx.translate(16,64);ctx.fillStyle='#183454';ctx.fillRect(0,0,w-32,72);
-  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{ctx.fillStyle='#fff';ctx.fillText(label,x+6,40);x+=widths()[i];});}
+  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{if(!exportColumns.includes(i))return;ctx.fillStyle='#fff';ctx.fillText(label,x+6,40);x+=widths()[i];});}
   const header=document.createElement('div');header.innerHTML=timelineHeader(model);
   header.querySelectorAll('.time-segment').forEach(el=>{
     const x=left+parseFloat(el.style.left),sw=parseFloat(el.style.width),top=el.parentElement.classList.contains('top');
@@ -963,9 +999,9 @@ async function renderPng() {
     ctx.fillStyle=isSummaryTask(t,tasks)?'#e9eff5':i%2?'#fff':'#f7f9fb';ctx.fillRect(0,y,w-32,rh);
     ctx.strokeStyle='#dce3eb';ctx.strokeRect(0,y,w-32,rh);
     if(left){let x=0;const values=[wbs.get(t.id),nameLines,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,relationLabel(t),`${cpm.metrics.get(t.id)?.totalFloat??'—'}`,lines];
-      values.forEach((v,j)=>{ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();(Array.isArray(v)?v:[v]).forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),y+22+k*20));ctx.restore();x+=widths()[j];});}
+      values.forEach((v,j)=>{if(!exportColumns.includes(j))return;ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();(Array.isArray(v)?v:[v]).forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),y+22+k*20));ctx.restore();x+=widths()[j];});}
     header.querySelectorAll('.bottom .time-segment').forEach(el=>{const x=left+parseFloat(el.style.left);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+rh);ctx.stroke();});
-    const x=left+daysBetween(model.start,t.start)*model.pxPerDay,bw=t.milestone?0:inclusiveDuration(t.start,t.finish)*model.pxPerDay;
+    const x=left+timelineX(model,t.start),bw=t.milestone?0:timelineBarWidth(model,t);
     coords.set(t.id,{s:x,f:x+bw,y:y+rh/2});y+=rh;
   });
   if($('#showArrows').checked)rows.forEach(({t})=>(t.predecessors||[]).forEach(r=>{
