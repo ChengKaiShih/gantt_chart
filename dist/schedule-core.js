@@ -61,7 +61,7 @@ export function deriveSummaryDates(tasks) {
   for (let index = output.length - 1; index >= 0; index -= 1) {
     const task = output[index];
     const { end } = taskSubtreeRange(output, index);
-    if (end === index + 1) continue;
+    if (end === index + 1 || task.summaryMode === "fixed") continue;
     const descendants = output.slice(index + 1, end).filter((item) => {
       const duration = inclusiveDuration(item.start, item.finish);
       return duration !== null;
@@ -247,7 +247,7 @@ export function scheduleBounds(tasks) {
 // Date-only scheduling: ordinary tasks occupy inclusive days; milestones are boundary events.
 export function autoSchedule(tasks) {
   const result = tasks.map(t => ({...t}));
-  const leaves = result.filter(t => !isSummaryTask(t, result));
+  const leaves = result.filter(t => !isSummaryTask(t, result) || t.summaryMode === "fixed");
   const byId = new Map(leaves.map(t => [t.id, t]));
   const visited = new Set(), active = new Set();
   function visit(t) {
@@ -257,6 +257,7 @@ export function autoSchedule(tasks) {
     const duration = t.milestone ? 0 : Number(t.duration ?? inclusiveDuration(t.start, t.finish));
     if (!Number.isInteger(duration) || (!t.milestone && duration < 1)) throw new Error(`「${t.name}」工期須為至少 1 個完整日曆天。`);
     let start = parseDate(t.notBefore || ((t.predecessors || []).length ? '' : t.start));
+    let controlling = null;
     for (const r of t.predecessors || []) {
       const pre = byId.get(r.taskId);
       if (!pre) throw new Error(`「${t.name}」的前置工項不存在或已成為上階工項。`);
@@ -264,14 +265,30 @@ export function autoSchedule(tasks) {
       visit(pre);
       const preDuration = pre.milestone ? 0 : pre.duration;
       const required = addDays(pre.start, relationWeight(r.type, preDuration, duration, Number(r.lag)));
-      if (!start || required > start) start = required;
+      if (!start || required > start) { start = required; controlling = pre; }
     }
     if (!start) throw new Error(`請為「${t.name}」設定開始日期或前置工項。`);
+    t.dateNotice = controlling && t.notBefore && formatDate(start) > t.notBefore ? `依「${controlling.name}」的前置關係，最早可於 ${formatDate(start)} 開始，已調整日期。` : "";
     t.duration = duration;
     t.start = formatDate(start);
     t.finish = formatDate(addDays(start, Math.max(1, duration) - 1));
+    if(t.requestedFinish && t.finish>t.requestedFinish) t.dateNotice=`依前置關係，最早可於 ${t.start} 開始、${t.finish} 完成，較指定完成日延後 ${daysBetween(t.requestedFinish,t.finish)} 天。`;
     active.delete(t.id); visited.add(t.id);
   }
   try { leaves.forEach(visit); return {ok:true, tasks:result}; }
   catch (error) { return {ok:false, error:error.message}; }
+}
+
+export function stageWarnings(tasks) {
+  const display=deriveSummaryDates(tasks), messages=new Map();
+  display.forEach((t,i)=>{
+    if(t.summaryMode!=='fixed'||!isSummaryTask(t,display))return;
+    const {end}=taskSubtreeRange(display,i);
+    const warnings=[];
+    display.slice(i+1,end).filter(c=>!isSummaryTask(c,display)).forEach(c=>{
+      if(c.start<t.start) warnings.push(`「${c.name}」早於階段開始 ${daysBetween(c.start,t.start)} 天`);
+      if(c.finish>t.finish) warnings.push(`「${c.name}」超出期限 ${daysBetween(t.finish,c.finish)} 天`);
+    });
+    if(warnings.length)messages.set(t.id,warnings.join('；'));
+  });return messages;
 }

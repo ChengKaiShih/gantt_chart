@@ -20,11 +20,11 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true">
+          <button class="brand-mark" id="projectMenu" type="button" aria-label="專案選單">
             <span></span><span></span><span></span>
-          </div>
+          </button>
           <div>
-            <p class="eyebrow">工程期程工具 · V2.0.2</p>
+            <p class="eyebrow">工程期程工具 · V2.1</p>
             <input id="projectName" class="project-name" aria-label="專案名稱" />
           </div>
         </div>
@@ -44,12 +44,13 @@
               <span aria-hidden="true">＋</span> 新增工項
             </button>
             <button class="button" id="addChild" type="button">新增下階工項</button>
+            <button class="button button-danger-quiet" id="deleteTask" type="button">刪除工項</button>
             <button class="button" id="milestoneToggle" type="button">切換里程碑</button><span class="toolbar-divider" aria-hidden="true"></span>
             <button class="icon-button" id="moveUp" type="button" title="上移工項" aria-label="上移工項">↑</button>
             <button class="icon-button" id="moveDown" type="button" title="下移工項" aria-label="下移工項">↓</button>
             <button class="icon-button indent-icon" id="outdent" type="button" title="取消縮排" aria-label="取消縮排">←</button>
             <button class="icon-button indent-icon" id="indent" type="button" title="建立下階層級" aria-label="建立下階層級">→</button>
-            <button class="button button-danger-quiet" id="deleteTask" type="button">刪除</button>
+            <button class="button button-danger-quiet" id="clearProject" type="button">清空專案</button>
           </div>
           <div class="scale-control"><select id="rangeMode" aria-label="時間範圍"><option value="auto">自動範圍</option><option value="year">完整年度</option></select>
             <span class="scale-label">時間尺度</span>
@@ -123,6 +124,8 @@
       </form>
     </dialog>
 
+    <dialog id="projectDrawer" class="project-drawer"><div class="dialog-heading"><h2>我的專案</h2><button id="closeProjects" class="dialog-close" aria-label="關閉專案選單">×</button></div><div id="projectList"></div><form id="newProjectForm"><label for="newProjectName">專案名稱</label><input id="newProjectName" required maxlength="100" placeholder="輸入專案名稱"/><button class="button button-primary" type="submit">新增專案 ＋</button></form></dialog>
+    <dialog id="confirmDialog" class="relation-dialog"><form method="dialog" class="dialog-card"><h2 id="confirmTitle"></h2><p id="confirmText"></p><div class="confirm-actions"><button class="button button-danger-quiet" value="yes" id="confirmYes">確定清空</button><button class="button" value="cancel" autofocus>取消返回</button></div></form></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script type="module" src="./app.js"></script>
   </body>

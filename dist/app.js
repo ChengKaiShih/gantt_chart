@@ -1,6 +1,7 @@
 import {
   RELATION_TYPES,
   autoSchedule,
+  stageWarnings,
   relationWeight,
   addDays,
   computeCPM,
@@ -94,6 +95,9 @@ function normalizeProject(value) {
       finish: typeof item.finish === "string" ? item.finish : "",
       notes: typeof item.notes === "string" ? item.notes : "",
       collapsed: Boolean(item.collapsed),
+      summaryMode: item.summaryMode === "fixed" ? "fixed" : "auto",
+      datesEdited: Boolean(item.datesEdited),
+      requestedFinish: typeof item.requestedFinish === "string" ? item.requestedFinish : "",
       rowHeight: Number.isFinite(Number(item.rowHeight)) ? Math.max(48, Math.min(1200, Number(item.rowHeight))) : undefined,
       milestone: Boolean(item.milestone),
       duration: item.milestone ? 0 : (item.duration ?? inclusiveDuration(item.start, item.finish)),
@@ -136,7 +140,21 @@ function loadProject() {
   }
 }
 
-let state = loadProject();
+const PROJECTS_KEY = "engineering-gantt-projects-v21";
+function readProjects() {
+  const stored=localStorage.getItem(PROJECTS_KEY);
+  if(stored) {
+    const value=JSON.parse(stored);
+    if(!Array.isArray(value.projects))throw new Error("專案清單格式不正確");
+    return value;
+  }
+  const first={id:uid(),data:loadProject()};
+  return {activeId:first.id,projects:[first]};
+}
+let projectLibrary = readProjects();
+if(!projectLibrary.projects.length){const first={id:uid(),data:{name:'未命名專案',scale:'quarter',tasks:[]}};projectLibrary.projects.push(first);projectLibrary.activeId=first.id;}
+let activeProjectId=(projectLibrary.projects.find(p=>p.id===projectLibrary.activeId)||projectLibrary.projects[0]).id;
+let state = normalizeProject(projectLibrary.projects.find(p=>p.id===activeProjectId).data);
 let lastCommitted = structuredClone(state);
 let selectedId = state.tasks[0]?.id || null;
 let relationTaskId = null;
@@ -153,7 +171,12 @@ function escapeHtml(value) {
 }
 
 function saveProject() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const entry=projectLibrary.projects.find(p=>p.id===activeProjectId);
+  if(entry)entry.data=structuredClone(state);
+  projectLibrary.activeId=activeProjectId;
+  try {localStorage.setItem(PROJECTS_KEY,JSON.stringify(projectLibrary));}
+  catch {elements.saveStatus.textContent="儲存失敗，請下載 JSON 備份";showToast("瀏覽器儲存失敗，請下載 JSON 備份。");return false;}
+  renderProjectList();
   elements.saveStatus.textContent = "儲存中…";
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -340,6 +363,7 @@ function relationLabel(task) {
 
 function renderGrid(displayTasks, cpm) {
   const model = timelineModel(displayTasks, state.scale);
+  const warnings=stageWarnings(state.tasks);
   const wbs = wbsNumbers(state.tasks);
   const visible = visibleTasks(displayTasks);
   const conflictIds = new Set(cpm.conflicts?.map((item) => item.taskId) || []);
@@ -360,6 +384,8 @@ function renderGrid(displayTasks, cpm) {
   visible.forEach((item) => {
     const raw = state.tasks.find((taskItem) => taskItem.id === item.id);
     const summary = isSummaryTask(raw, state.tasks);
+    const editable=!summary || raw.summaryMode==='fixed';
+    const notice=[raw.dateNotice,warnings.get(item.id)].filter(Boolean).join(" ");
     const metric = cpm.metrics?.get(item.id);
     const duration = item.milestone ? 0 : inclusiveDuration(item.start, item.finish);
     const selected = item.id === selectedId;
@@ -373,7 +399,7 @@ function renderGrid(displayTasks, cpm) {
     const floatText = summary || !metric ? "—" : `${metric.totalFloat}日`;
     const barLeft = duration === null ? 0 : timelineX(model,item.start);
     const barWidth = duration === null ? 0 : Math.max(3, timelineBarWidth(model,item));
-    const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""}`;
+    const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""} ${summary && raw.summaryMode==='fixed'?'fixed-stage':''}`;
     const bar = duration === null
       ? ""
       : `<span class="gantt-bar ${barClass}" style="left:${barLeft}px;width:${barWidth}px" title="${escapeHtml(item.name)}｜${item.start}～${item.finish}｜${duration}日${calculated ? `｜${calculated}` : ""}"></span>`;
@@ -386,12 +412,13 @@ function renderGrid(displayTasks, cpm) {
             <textarea class="task-input" data-field="name" rows="1" aria-label="工項名稱">${escapeHtml(item.name)}</textarea>
             ${conflict ? `<span class="warning-mark" title="計畫日期與前置關係衝突">!</span>` : ""}
           </div>
-          <div><input class="date-input" type="date" data-field="start" value="${escapeHtml(item.start)}" ${summary ? "disabled" : ""} aria-label="開始日期" /></div>
-          <div><input class="date-input" type="date" data-field="finish" value="${escapeHtml(item.finish)}" ${summary ? "disabled" : ""} aria-label="完成日期" /></div>
-          <div class="duration-cell">${summary ? `${duration}日` : `<input class="duration-input" type="number" min="${item.milestone ? 0 : 1}" step="1" data-field="duration" value="${duration ?? 1}" aria-label="工期（日曆天）" ${item.milestone ? "disabled" : ""} />`}</div>
-          <div class="relation-cell"><button class="relation-button" type="button" data-action="relations" ${summary ? "disabled" : ""}>${summary ? "彙整" : escapeHtml(relationLabel(raw))}</button></div>
+          <div><input class="date-input" type="date" data-field="start" value="${escapeHtml(item.start)}" ${editable ? "" : "disabled"} aria-label="開始日期" /></div>
+          <div><input class="date-input" type="date" data-field="finish" value="${escapeHtml(item.finish)}" ${editable ? "" : "disabled"} aria-label="完成日期" /></div>
+          <div class="duration-cell">${!editable ? `${duration}日` : `<input class="duration-input" type="number" min="${item.milestone ? 0 : 1}" step="1" data-field="duration" value="${duration ?? 1}" aria-label="工期（日曆天）" ${item.milestone ? "disabled" : ""} />`}</div>
+          <div class="relation-cell">${summary ? `<select data-field="summaryMode" aria-label="上階工期模式"><option value="auto" ${raw.summaryMode!=='fixed'?'selected':''}>累計工期</option><option value="fixed" ${raw.summaryMode==='fixed'?'selected':''}>固定工期</option></select>` : ''}${editable ? `<button class="relation-button" type="button" data-action="relations">${escapeHtml(relationLabel(raw))}</button>` : ''}</div>
           <div class="float-cell ${metric?.critical ? "critical-text" : ""}" title="${escapeHtml(calculated)}">${floatText}</div>
           <div><textarea class="note-input" data-field="notes" aria-label="主要控制或說明">${escapeHtml(raw.notes)}</textarea></div>
+          ${notice ? `<div class="row-notice" role="status">${escapeHtml(notice)}</div>` : ""}
         </div>
         <div class="timeline-cell" style="--grid-size:${model.unitWidth}px;--minor-grid-size:${model.unitWidth}px">
           ${todayHtml}${bar}
@@ -498,7 +525,10 @@ function findNextSibling(index) {
 function addTopLevelTask() {
   const dates = defaultDates();
   const item = task(uid(), "新增工項", 0, dates.start, dates.finish, [], "");
-  state.tasks.push(item);
+  let index=state.tasks.findIndex(t=>t.id===selectedId);
+  while(index>0 && state.tasks[index].level>0)index--;
+  const insertAt=index<0?state.tasks.length:taskSubtreeRange(state.tasks,index).end;
+  state.tasks.splice(insertAt,0,item);
   selectedId ||= item.id;
   commit({ message: "已新增工項" });
 }
@@ -510,9 +540,10 @@ function addChildTask() {
   const wasSummary = isSummaryTask(parent, state.tasks);
   const dates = inclusiveDuration(parent.start, parent.finish) !== null ? parent : defaultDates();
   const { end } = taskSubtreeRange(state.tasks, index);
-  const inheritedRelations = wasSummary ? [] : parent.predecessors.map((relation) => ({ ...relation }));
+  if(!wasSummary){ parent.summaryMode=parent.datesEdited?'fixed':'auto';parent.milestone=false; }
+  const inheritedRelations = wasSummary || parent.summaryMode==='fixed' ? [] : parent.predecessors.map((relation) => ({ ...relation }));
   const item = task(uid(), "新增下階工項", parent.level + 1, dates.start, dates.finish, inheritedRelations, "");
-  if (!wasSummary) parent.predecessors = [];
+  if (!wasSummary && parent.summaryMode!=="fixed") parent.predecessors = [];
   state.tasks.splice(end, 0, item);
   parent.collapsed = false;
   selectedId = parent.id;
@@ -572,7 +603,7 @@ function deleteSelected() {
 
 function openRelations(id) {
   const item = state.tasks.find((taskItem) => taskItem.id === id);
-  if (!item || isSummaryTask(item, state.tasks)) return;
+  if (!item || (isSummaryTask(item, state.tasks) && item.summaryMode!=="fixed")) return;
   relationTaskId = id;
   renderApp();
   renderRelationDialog();
@@ -581,7 +612,7 @@ function openRelations(id) {
 
 function relationCandidates(item) {
   return state.tasks.filter(
-    (candidate) => candidate.id !== item.id && !isSummaryTask(candidate, state.tasks),
+    (candidate) => candidate.id !== item.id && (!isSummaryTask(candidate, state.tasks) || candidate.summaryMode === "fixed"),
   );
 }
 
@@ -592,7 +623,7 @@ function renderRelationDialog() {
   const candidates = relationCandidates(item);
   $("#relationResult").textContent = `排程結果：${item.start} 開始 → ${item.finish} 完成，工期 ${item.milestone ? 0 : item.duration ?? inclusiveDuration(item.start,item.finish)} 日。多個前置條件取最晚允許日期。`;
   $("#notBefore").value = item.notBefore || "";
-  $("#relationError").textContent = "";
+  $("#relationError").textContent = item.dateNotice || stageWarnings(state.tasks).get(item.id) || "";
   if (!item.predecessors.length) {
     elements.relationList.innerHTML = `<div class="relation-empty">尚未設定前置工項，此工項將視為網圖起始工項。</div>`;
     return;
@@ -639,7 +670,7 @@ function removeRelation(index) {
 }
 
 function exportProject() {
-  const contents = JSON.stringify({ format: "engineering-gantt-v2", exportedAt: new Date().toISOString(), ...state }, null, 2);
+  const contents = JSON.stringify({ format: "engineering-gantt-v2.1", exportedAt: new Date().toISOString(), ...state }, null, 2);
   const blob = new Blob([contents], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -694,7 +725,17 @@ elements.scheduleGrid.addEventListener("change", (event) => {
   if (!field || !row) return;
   const item = state.tasks.find((taskItem) => taskItem.id === row.dataset.id);
   const before = structuredClone(state.tasks);
-  if (field === "duration") item.duration = Number(event.target.value);
+  if (['start','finish','duration'].includes(field)) {item.datesEdited=true;item.requestedFinish=field==='finish'?event.target.value:'';}
+  if(field==='summaryMode') {
+    const displayed=deriveSummaryDates(state.tasks).find(t=>t.id===item.id);
+    if(event.target.value==='fixed') {item.start=displayed.start;item.finish=displayed.finish;item.duration=inclusiveDuration(item.start,item.finish);item.milestone=false;}
+    else {
+      if(state.tasks.some(t=>(t.predecessors||[]).some(r=>r.taskId===item.id))) {showToast('其他工項正依賴此固定工期，請先調整前置關係。');renderApp();return;}
+      item.predecessors=[];item.notBefore='';
+    }
+    item.summaryMode=event.target.value;
+  }
+  else if (field === "duration") item.duration = Number(event.target.value);
   else if (field === "start") { item.start = event.target.value; item.notBefore = event.target.value; }
   else if (field === "finish") {
     item.duration = inclusiveDuration(item.start, event.target.value);
@@ -824,7 +865,9 @@ function registerWebMcpTools() {
 }
 
 setupV2();
+setupProjects();
 renderApp();
+saveProject();
 registerWebMcpTools();
 
 function relationError(message) { $("#relationError").textContent = message; }
@@ -1010,8 +1053,50 @@ async function renderPng() {
   }));
   rows.forEach(({t})=>{const c=coords.get(t.id);ctx.fillStyle=cpm.metrics.get(t.id)?.critical?'#c83f43':'#f0a51a';
     if(t.milestone){ctx.beginPath();ctx.moveTo(c.s,c.y-7);ctx.lineTo(c.s+7,c.y);ctx.lineTo(c.s,c.y+7);ctx.lineTo(c.s-7,c.y);ctx.closePath();ctx.fill();}
+    else if(isSummaryTask(t,tasks)&&t.summaryMode==='fixed'){ctx.strokeStyle='#365b78';ctx.lineWidth=2;ctx.strokeRect(c.s,c.y-12,c.f-c.s,24);ctx.lineWidth=1;}
     else if(isSummaryTask(t,tasks)){ctx.fillStyle='#365b78';ctx.fillRect(c.s,c.y-3,c.f-c.s,6);ctx.fillRect(c.s,c.y-3,3,12);ctx.fillRect(c.f-3,c.y-3,3,12);}
     else ctx.fillRect(c.s,c.y-10,Math.max(2,c.f-c.s),20);
   });
   return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('無法產生圖片')),'image/png'));
+}
+
+function renderProjectList() {
+  const list=$('#projectList');if(!list)return;
+  list.innerHTML=projectLibrary.projects.map(p=>`<div class="project-entry"><button class="project-choice ${p.id===activeProjectId?'active':''}" data-project="${escapeHtml(p.id)}">${escapeHtml(p.data.name)}</button><button class="project-delete" data-delete-project="${escapeHtml(p.id)}" aria-label="刪除專案 ${escapeHtml(p.data.name)}" title="刪除專案"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg></button></div>`).join('');
+}
+function confirmAction(title,text,label) {
+  const dialog=$('#confirmDialog');$('#confirmTitle').textContent=title;$('#confirmText').textContent=text;$('#confirmYes').textContent=label;
+  dialog.returnValue='cancel';
+  return new Promise(resolve=>{dialog.addEventListener('close',()=>resolve(dialog.returnValue==='yes'),{once:true});dialog.showModal();});
+}
+function activateProject(id) {
+  const entry=projectLibrary.projects.find(p=>p.id===id);if(!entry)return;
+  state=normalizeProject(entry.data);activeProjectId=id;lastCommitted=structuredClone(state);selectedId=state.tasks[0]?.id||null;relationTaskId=null;
+  $('#rangeMode').value=state.rangeMode||'auto';
+  renderApp();saveProject();$('#scheduleScroll').scrollTop=0;$('#scheduleScroll').scrollLeft=0;
+}
+function setupProjects() {
+  $('#projectMenu').onclick=()=>{renderProjectList();$('#projectDrawer').showModal();};
+  $('#closeProjects').onclick=()=>$('#projectDrawer').close();
+  $('#newProjectForm').onsubmit=e=>{
+    e.preventDefault();if(saveProject()===false)return;
+    const name=$('#newProjectName').value.trim();if(!name)return;
+    const entry={id:uid(),data:{name,scale:'quarter',tasks:[]}};projectLibrary.projects.push(entry);
+    activateProject(entry.id);$('#newProjectName').value='';$('#projectDrawer').close();
+  };
+  $('#projectList').onclick=async e=>{
+    const select=e.target.closest('[data-project]'),remove=e.target.closest('[data-delete-project]');
+    if(select){if(saveProject()===false)return;activateProject(select.dataset.project);$('#projectDrawer').close();}
+    if(remove){
+      const id=remove.dataset.deleteProject,entry=projectLibrary.projects.find(p=>p.id===id);if(!entry)return;
+      if(!await confirmAction('刪除專案',`確定刪除「${entry.data.name}」及所有工項？`,'確定刪除'))return;
+      projectLibrary.projects=projectLibrary.projects.filter(p=>p.id!==id);
+      if(!projectLibrary.projects.length)projectLibrary.projects.push({id:uid(),data:{name:'未命名專案',scale:'quarter',tasks:[]}});
+      if(id===activeProjectId)activateProject(projectLibrary.projects[0].id);else saveProject();
+    }
+  };
+  $('#clearProject').onclick=async()=>{
+    if(!await confirmAction('清空專案',`確定清空「${state.name}」的所有工項與前置關係？`,'確定清空'))return;
+    state.tasks=[];selectedId=null;commit({message:'已清空目前專案'});
+  };
 }

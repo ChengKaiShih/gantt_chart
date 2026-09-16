@@ -528,3 +528,22 @@ textarea.task-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-w
 .bottom .time-resize-handle:hover {background:#f0a51a;}
 .timeline-cell::after {display:none;}
 .report-mode .time-resize-handle {visibility:hidden;}
+.project-drawer {position:fixed;inset:0 auto 0 0;margin:0;width:min(390px,90vw);height:100dvh;max-height:none;border:0;padding:24px;color:var(--navy-900);}
+.project-drawer::backdrop {background:#10233e88;}
+.project-drawer[open] {display:flex;flex-direction:column;gap:20px;}
+.project-drawer h2 {margin:0;}
+#projectList {overflow:auto;flex:1;}
+.project-entry {display:flex;gap:8px;margin-bottom:12px;}
+.project-choice {flex:1;min-width:0;text-align:left;overflow-wrap:anywhere;padding:14px;border:1px solid #c9d3df;background:white;border-radius:6px;color:#183454;}
+.project-choice.active {border-color:#183454;background:#edf3f7;font-weight:bold;}
+.project-delete {width:42px;flex-shrink:0;border:1px solid #e7c0c2;background:#fff7f7;color:#8e262c;border-radius:6px;}
+#newProjectForm {display:grid;gap:10px;}
+#newProjectName {width:100%;padding:10px;border:1px solid #c9d3df;border-radius:6px;}
+.confirm-actions {display:flex;justify-content:flex-end;gap:12px;margin-top:24px;}
+#clearProject {margin-left:auto;}
+.task-actions {flex:1;}
+.relation-cell {flex-direction:column;gap:2px;}
+.relation-cell select {width:100%;font-size:12px;padding:4px 0;border:1px solid #c9d3df;background:white;border-radius:4px;}
+.task-cell > .row-notice {grid-column:1/-1;color:#8e262c;background:#fff4ee;padding:6px 12px;font-size:12px;line-height:1.6;}
+.gantt-bar.fixed-stage {height:24px;background:transparent;border:2px solid #365b78;}
+.gantt-bar.fixed-stage::before,.gantt-bar.fixed-stage::after {display:none;}
