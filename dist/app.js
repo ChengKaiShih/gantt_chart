@@ -399,7 +399,7 @@ function renderGrid(displayTasks, cpm) {
     const floatText = summary || !metric ? "—" : `${metric.totalFloat}日`;
     const barLeft = duration === null ? 0 : timelineX(model,item.start);
     const barWidth = duration === null ? 0 : Math.max(3, timelineBarWidth(model,item));
-    const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""} ${summary && raw.summaryMode==='fixed'?'fixed-stage':''}`;
+    const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""}`;
     const bar = duration === null
       ? ""
       : `<span class="gantt-bar ${barClass}" style="left:${barLeft}px;width:${barWidth}px" title="${escapeHtml(item.name)}｜${item.start}～${item.finish}｜${duration}日${calculated ? `｜${calculated}` : ""}"></span>`;
@@ -522,11 +522,11 @@ function findNextSibling(index) {
   return state.tasks[end]?.level === level ? end : null;
 }
 
-function addTopLevelTask() {
+function addSiblingTask() {
   const dates = defaultDates();
-  const item = task(uid(), "新增工項", 0, dates.start, dates.finish, [], "");
-  let index=state.tasks.findIndex(t=>t.id===selectedId);
-  while(index>0 && state.tasks[index].level>0)index--;
+  const index=state.tasks.findIndex(t=>t.id===selectedId);
+  const level=index<0?0:state.tasks[index].level;
+  const item = task(uid(), "新增工項", level, dates.start, dates.finish, [], "");
   const insertAt=index<0?state.tasks.length:taskSubtreeRange(state.tasks,index).end;
   state.tasks.splice(insertAt,0,item);
   selectedId ||= item.id;
@@ -758,7 +758,7 @@ elements.scaleButtons.addEventListener("click", (event) => {
   commit();
 });
 
-$("#addTask").addEventListener("click", addTopLevelTask);
+$("#addTask").addEventListener("click", addSiblingTask);
 $("#addChild").addEventListener("click", addChildTask);
 $("#moveUp").addEventListener("click", () => moveSelected("up"));
 $("#moveDown").addEventListener("click", () => moveSelected("down"));
@@ -1030,19 +1030,19 @@ async function renderPng() {
   canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
   ctx.fillStyle='#10233e';ctx.font='bold 20px "Microsoft JhengHei", sans-serif';ctx.fillText(state.name,16,30);
   ctx.font='12px "Microsoft JhengHei", sans-serif';ctx.fillText('一般工項：金色　要徑：紅色　里程碑：◆　工期：日曆天',16,54);
-  ctx.translate(16,64);ctx.fillStyle='#183454';ctx.fillRect(0,0,w-32,72);
-  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{if(!exportColumns.includes(i))return;ctx.fillStyle='#fff';ctx.fillText(label,x+6,40);x+=widths()[i];});}
+  ctx.translate(16,64);ctx.textBaseline='middle';ctx.fillStyle='#183454';ctx.fillRect(0,0,w-32,72);
+  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{if(!exportColumns.includes(i))return;ctx.fillStyle='#fff';ctx.fillText(label,x+6,36);x+=widths()[i];});}
   const header=document.createElement('div');header.innerHTML=timelineHeader(model);
   header.querySelectorAll('.time-segment').forEach(el=>{
     const x=left+parseFloat(el.style.left),sw=parseFloat(el.style.width),top=el.parentElement.classList.contains('top');
-    ctx.strokeStyle='#60738a';ctx.strokeRect(x,top?0:36,sw,36);ctx.fillStyle=top?'#f8d88e':'#fff';ctx.save();ctx.beginPath();ctx.rect(x,top?0:36,sw,36);ctx.clip();ctx.fillText(el.textContent,x+Math.max(3,(sw-ctx.measureText(el.textContent).width)/2),top?23:59);ctx.restore();
+    ctx.strokeStyle='#60738a';ctx.strokeRect(x,top?0:36,sw,36);ctx.fillStyle=top?'#f8d88e':'#fff';ctx.save();ctx.beginPath();ctx.rect(x,top?0:36,sw,36);ctx.clip();ctx.fillText(el.textContent,x+Math.max(3,(sw-ctx.measureText(el.textContent).width)/2),top?18:54);ctx.restore();
   });
   let y=72;const coords=new Map(),wbs=wbsNumbers(state.tasks);
   rows.forEach(({t,lines,nameLines,h:rh},i)=>{
     ctx.fillStyle=isSummaryTask(t,tasks)?'#e9eff5':i%2?'#fff':'#f7f9fb';ctx.fillRect(0,y,w-32,rh);
     ctx.strokeStyle='#dce3eb';ctx.strokeRect(0,y,w-32,rh);
     if(left){let x=0;const values=[wbs.get(t.id),nameLines,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,relationLabel(t),`${cpm.metrics.get(t.id)?.totalFloat??'—'}`,lines];
-      values.forEach((v,j)=>{if(!exportColumns.includes(j))return;ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();(Array.isArray(v)?v:[v]).forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),y+22+k*20));ctx.restore();x+=widths()[j];});}
+      values.forEach((v,j)=>{if(!exportColumns.includes(j))return;ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();const textLines=Array.isArray(v)?v:[v];const firstY=y+rh/2-(textLines.length-1)*10;textLines.forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),firstY+k*20));ctx.restore();x+=widths()[j];});}
     header.querySelectorAll('.bottom .time-segment').forEach(el=>{const x=left+parseFloat(el.style.left);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+rh);ctx.stroke();});
     const x=left+timelineX(model,t.start),bw=t.milestone?0:timelineBarWidth(model,t);
     coords.set(t.id,{s:x,f:x+bw,y:y+rh/2});y+=rh;
@@ -1053,7 +1053,6 @@ async function renderPng() {
   }));
   rows.forEach(({t})=>{const c=coords.get(t.id);ctx.fillStyle=cpm.metrics.get(t.id)?.critical?'#c83f43':'#f0a51a';
     if(t.milestone){ctx.beginPath();ctx.moveTo(c.s,c.y-7);ctx.lineTo(c.s+7,c.y);ctx.lineTo(c.s,c.y+7);ctx.lineTo(c.s-7,c.y);ctx.closePath();ctx.fill();}
-    else if(isSummaryTask(t,tasks)&&t.summaryMode==='fixed'){ctx.strokeStyle='#365b78';ctx.lineWidth=2;ctx.strokeRect(c.s,c.y-12,c.f-c.s,24);ctx.lineWidth=1;}
     else if(isSummaryTask(t,tasks)){ctx.fillStyle='#365b78';ctx.fillRect(c.s,c.y-3,c.f-c.s,6);ctx.fillRect(c.s,c.y-3,3,12);ctx.fillRect(c.f-3,c.y-3,3,12);}
     else ctx.fillRect(c.s,c.y-10,Math.max(2,c.f-c.s),20);
   });
