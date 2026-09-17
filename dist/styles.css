@@ -556,3 +556,12 @@ textarea.task-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-w
 .report-mode .stage-flag {visibility:hidden;}
 .schedule-grid {padding-right:9px;}
 @media print {.stage-flag {display:none;}}
+
+/* Extend editor selection across both halves of the row, retaining grid lines. */
+.schedule-row.selected .task-cell,
+.schedule-row.selected .timeline-cell {background-color:#eef5fb;}
+.report-mode .schedule-row.selected .timeline-cell {background-color:transparent;}
+@media print {
+  .schedule-row.selected .task-cell {background-color:white;box-shadow:none;}
+  .schedule-row.selected .timeline-cell {background-color:transparent;}
+}

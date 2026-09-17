@@ -50,24 +50,597 @@ function uid() {
 
 function sampleProject() {
   return {
-    name: "道路工程整體期程（範例）",
-    scale: "quarter",
-    tasks: [
-      task("p1", "前期規劃與審議", 0, "", "", [], "上位作業與審議程序"),
-      task("a1", "可行性研究", 1, "2026-10-01", "2027-03-29", [], "完成建設必要性及方案評估"),
-      task("a2", "綜合規劃", 1, "2027-03-30", "2027-09-25", [rel("a1", "FS", 0)], "確認路線、工程配置及經費"),
-      task("a3", "環境影響評估", 1, "2027-05-29", "2028-01-23", [rel("a2", "SS", 60)], "與綜合規劃交疊辦理"),
-      task("p2", "設計與用地作業", 0, "", "", [], "設計及用地程序併行推動"),
-      task("b1", "基本設計", 1, "2027-03-30", "2027-08-26", [rel("a1", "FS", 0)], "建立主要工程配置及設計原則"),
-      task("b2", "細部設計", 1, "2027-08-27", "2028-02-22", [rel("b1", "FS", 0)], "完成施工圖說及工程預算"),
-      task("b3", "都市計畫變更及用地取得", 1, "2027-08-27", "2028-03-23", [rel("b1", "FS", 0)], "配合設計成果推動用地作業"),
-      task("p3", "工程招標及施工", 0, "", "", [], "施工期以橋梁工程控制"),
-      task("c1", "工程招標", 1, "2028-03-24", "2028-06-21", [rel("b2", "FS", 0), rel("b3", "FS", 0)], "完成招標文件及決標程序"),
-      task("c2", "橋梁基礎工程", 1, "2028-06-22", "2028-12-18", [rel("c1", "FS", 0)], "基樁及基礎施工"),
-      task("c3", "橋梁下部結構", 1, "2028-12-19", "2029-05-27", [rel("c2", "FS", 0)], "橋墩、橋台及支承墊施工"),
-      task("c4", "橋梁上部結構", 1, "2029-05-28", "2030-01-22", [rel("c3", "FS", 0)], "上部結構施工為主要控制工項"),
-      task("c5", "附屬工程及驗收", 1, "2030-01-23", "2030-05-22", [rel("c4", "FS", 0)], "鋪面、排水、交維及驗收"),
+    "name": "專案範例",
+    "scale": "month",
+    "rangeMode": "auto",
+    "columnWidths": [
+      44,
+      226.66665649414062,
+      112,
+      112,
+      72,
+      98.22222900390625,
+      62,
+      151.111083984375
     ],
+    "timelineWidths": {
+      "month": 68.26022251674112,
+      "day": 24,
+      "quarter": 193.111083984375,
+      "week": 33
+    },
+    "tasks": [
+      {
+        "id": "a3a6deb8-20c2-4d14-b977-0c6d8fe33572",
+        "name": "第一階段(服務實施計畫書)",
+        "level": 0,
+        "start": "2026-11-03",
+        "finish": "2026-11-16",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 14,
+        "notBefore": "2026-11-03",
+        "predecessors": [],
+        "dateNotice": ""
+      },
+      {
+        "id": "6859b5ee-6789-4ea6-becd-931e8de6a71e",
+        "name": "服務實施計畫書製作",
+        "level": 1,
+        "start": "2026-11-03",
+        "finish": "2026-11-16",
+        "predecessors": [
+          {
+            "taskId": "a3a6deb8-20c2-4d14-b977-0c6d8fe33572",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 14
+      },
+      {
+        "id": "d9316f45-2ca9-4a90-a00d-a102ce66e66b",
+        "name": "提交服務實施計畫書",
+        "level": 1,
+        "start": "2026-11-16",
+        "finish": "2026-11-16",
+        "predecessors": [
+          {
+            "taskId": "a3a6deb8-20c2-4d14-b977-0c6d8fe33572",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "notes": "提交日",
+        "collapsed": false,
+        "milestone": true,
+        "duration": 0,
+        "stageControl": false,
+        "dateNotice": ""
+      },
+      {
+        "id": "2f3b3c9f-4f86-4cb6-9061-f624411fb38f",
+        "name": "服務實施計畫書審查",
+        "level": 0,
+        "start": "2026-11-17",
+        "finish": "2026-11-30",
+        "notes": "審查日程",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 14,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "d9316f45-2ca9-4a90-a00d-a102ce66e66b",
+            "type": "FS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "4cdbb504-b854-4a2b-912a-626089303d5d",
+        "name": "第二階段(期中報告)",
+        "level": 0,
+        "start": "2026-12-01",
+        "finish": "2027-03-10",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 100,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "2f3b3c9f-4f86-4cb6-9061-f624411fb38f",
+            "type": "FS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "1307ef63-e657-4818-a88e-092738500a80",
+        "name": "現地測量",
+        "level": 1,
+        "start": "2026-12-01",
+        "finish": "2027-02-18",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 80,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "4cdbb504-b854-4a2b-912a-626089303d5d",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "8ae6279e-65ed-45d5-a2eb-62ff601bb03f",
+        "name": "基本資料蒐集分析",
+        "level": 1,
+        "start": "2026-12-01",
+        "finish": "2027-02-18",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 80,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "4cdbb504-b854-4a2b-912a-626089303d5d",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "4993fbec-4e95-44f9-940d-dd14371124ad",
+        "name": "運輸需求分析預測",
+        "level": 1,
+        "start": "2026-12-31",
+        "finish": "2027-02-18",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 50,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "8ae6279e-65ed-45d5-a2eb-62ff601bb03f",
+            "type": "SS",
+            "lag": 30
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "e953f5d2-9da1-42da-b14a-031bd71502a0",
+        "name": "交通特性調查",
+        "level": 1,
+        "start": "2026-12-31",
+        "finish": "2027-02-18",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 50,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "4993fbec-4e95-44f9-940d-dd14371124ad",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "23b26069-80b3-4507-8b9d-14521dcb068a",
+        "name": "路廊方案研擬",
+        "level": 1,
+        "start": "2027-01-10",
+        "finish": "2027-03-10",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 60,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "4cdbb504-b854-4a2b-912a-626089303d5d",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "f6d4b2f7-9322-494d-a225-4eb36904e1a0",
+        "name": "提交期中報告",
+        "level": 1,
+        "start": "2027-03-10",
+        "finish": "2027-03-10",
+        "notes": "提交日",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": true,
+        "duration": 0,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "4cdbb504-b854-4a2b-912a-626089303d5d",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "16dd6733-ca73-47a2-80bc-ee626961c03d",
+        "name": "專家說明會",
+        "level": 0,
+        "start": "2027-02-02",
+        "finish": "2027-02-02",
+        "predecessors": [],
+        "notes": "至少一場專家說明會",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 1,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "notBefore": "2027-02-02"
+      },
+      {
+        "id": "d63340f3-5402-41c7-a55f-045a97d61055",
+        "name": "期中報告審查",
+        "level": 0,
+        "start": "2027-03-10",
+        "finish": "2027-06-07",
+        "notes": "審查日程",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 90,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "f6d4b2f7-9322-494d-a225-4eb36904e1a0",
+            "type": "FS",
+            "lag": -1
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+        "name": "第三階段(期末報告)",
+        "level": 0,
+        "start": "2027-06-08",
+        "finish": "2027-08-16",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 70,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "d63340f3-5402-41c7-a55f-045a97d61055",
+            "type": "FS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "b4693dd6-1deb-484a-a956-c8ea20ff04bf",
+        "name": "地質鑽探",
+        "level": 1,
+        "start": "2027-06-08",
+        "finish": "2027-08-06",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 60,
+        "datesEdited": true,
+        "requestedFinish": ""
+      },
+      {
+        "id": "a4ba562e-14de-40b0-be16-8c3172d1bf48",
+        "name": "交通效益分析",
+        "level": 1,
+        "start": "2027-06-08",
+        "finish": "2027-07-27",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 50,
+        "datesEdited": true,
+        "requestedFinish": ""
+      },
+      {
+        "id": "a68820a9-743f-44d9-8f69-4c2e32eea53a",
+        "name": "環境影響分析及影響對策",
+        "level": 1,
+        "start": "2027-06-08",
+        "finish": "2027-07-27",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 50,
+        "datesEdited": true,
+        "requestedFinish": ""
+      },
+      {
+        "id": "120db6c3-324f-4bc6-97d3-3be7d3d35e82",
+        "name": "生態工法與綠道路評估",
+        "level": 1,
+        "start": "2027-06-08",
+        "finish": "2027-07-27",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 50,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "rowHeight": 48
+      },
+      {
+        "id": "17f1e3b6-712b-45aa-ad9b-4201831b46f7",
+        "name": "經費估算",
+        "level": 1,
+        "start": "2027-07-18",
+        "finish": "2027-08-16",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 30,
+        "datesEdited": true,
+        "requestedFinish": ""
+      },
+      {
+        "id": "c552d899-6d90-4bdd-b029-2216dfbcb6ea",
+        "name": "經濟效益評估及財務規劃",
+        "level": 1,
+        "start": "2027-07-18",
+        "finish": "2027-08-16",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 30,
+        "summaryMode": "auto",
+        "milestone": false,
+        "datesEdited": true,
+        "requestedFinish": ""
+      },
+      {
+        "id": "77c36cb2-f364-437e-a8f3-bf726fda1481",
+        "name": "提交期末報告",
+        "level": 1,
+        "start": "2027-08-16",
+        "finish": "2027-08-16",
+        "predecessors": [
+          {
+            "taskId": "4809aed2-6d21-494d-9ecb-5d6d22b72081",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "milestone": true,
+        "duration": 0,
+        "stageControl": false,
+        "dateNotice": "",
+        "rowHeight": 48
+      },
+      {
+        "id": "35694afe-26b6-44b7-b3db-94a75d3e91d7",
+        "name": "地方說明會",
+        "level": 0,
+        "start": "2027-04-02",
+        "finish": "2027-04-02",
+        "predecessors": [],
+        "notes": "至少一場地方說明會",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 1,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "notBefore": "2027-04-02"
+      },
+      {
+        "id": "e7d49469-d498-408c-8ca9-c90eea71aad6",
+        "name": "期末報告審查",
+        "level": 0,
+        "start": "2027-08-17",
+        "finish": "2027-11-14",
+        "notes": "審查日程",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 90,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "77c36cb2-f364-437e-a8f3-bf726fda1481",
+            "type": "FS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "7e6b0660-473c-4e20-afe9-38913b2b7147",
+        "name": "第四階段(成果報告定稿本及法定文件交付)",
+        "level": 0,
+        "start": "2027-11-15",
+        "finish": "2027-12-04",
+        "notes": "",
+        "collapsed": false,
+        "summaryMode": "fixed",
+        "stageControl": true,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": false,
+        "duration": 20,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "e7d49469-d498-408c-8ca9-c90eea71aad6",
+            "type": "FS",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      },
+      {
+        "id": "2735c4a6-d176-4a9e-b5ab-53500e9536ff",
+        "name": "成果報告定稿本製作",
+        "level": 1,
+        "start": "2027-11-15",
+        "finish": "2027-12-04",
+        "predecessors": [
+          {
+            "taskId": "7e6b0660-473c-4e20-afe9-38913b2b7147",
+            "type": "SS",
+            "lag": 0
+          }
+        ],
+        "notes": "",
+        "collapsed": false,
+        "stageControl": false,
+        "dateNotice": "",
+        "duration": 20
+      },
+      {
+        "id": "9e8730df-cb15-4318-a51a-4b6cc5c3183d",
+        "name": "提交成果報告",
+        "level": 1,
+        "start": "2027-12-04",
+        "finish": "2027-12-04",
+        "notes": "提交日",
+        "collapsed": false,
+        "summaryMode": "auto",
+        "stageControl": false,
+        "datesEdited": true,
+        "requestedFinish": "",
+        "milestone": true,
+        "duration": 0,
+        "notBefore": "",
+        "predecessors": [
+          {
+            "taskId": "7e6b0660-473c-4e20-afe9-38913b2b7147",
+            "type": "FF",
+            "lag": 0
+          }
+        ],
+        "dateNotice": ""
+      }
+    ]
   };
 }
 
@@ -814,7 +1387,7 @@ $("#sampleButton").addEventListener("click", () => {
   if (!window.confirm("載入範例會取代目前瀏覽器中的專案資料，是否繼續？")) return;
   state = sampleProject();
   selectedId = state.tasks[0].id;
-  commit({ message: "已載入道路工程範例" });
+  commit({ message: "已載入專案範例" });
 });
 
 elements.addRelation.addEventListener("click", addRelation);
