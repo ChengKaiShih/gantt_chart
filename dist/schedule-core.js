@@ -85,17 +85,20 @@ export function relationWeight(type, predecessorDuration, successorDuration, lag
     case "FF": return Math.max(1, predecessorDuration) + lag - Math.max(1, successorDuration);
     case "SF": return lag - Math.max(1, successorDuration) + 1;
     case "FS":
-    default: return predecessorDuration + lag;
+    default: return Math.max(1, predecessorDuration) + lag;
   }
 }
 
 export function computeCPM(tasks) {
-  const leaves = tasks.filter((task) => !isSummaryTask(task, tasks));
+  const leaves = tasks.filter((task) => !isSummaryTask(task, tasks) || task.summaryMode === "fixed");
   const usable = leaves.filter((task) => inclusiveDuration(task.start, task.finish) !== null);
   const byId = new Map(usable.map((task) => [task.id, task]));
   const durations = new Map(
     usable.map((task) => [task.id, task.milestone ? 0 : inclusiveDuration(task.start, task.finish)]),
   );
+  // Stored milestone dates refer to day-end. Its date-coordinate span is one day,
+  // while the user-facing duration remains zero.
+  const spans = new Map(usable.map(t => [t.id, Math.max(1, durations.get(t.id))]));
   const incoming = new Map(usable.map((task) => [task.id, []]));
   const outgoing = new Map(usable.map((task) => [task.id, []]));
   const indegree = new Map(usable.map((task) => [task.id, 0]));
@@ -163,14 +166,35 @@ export function computeCPM(tasks) {
 
   const projectDuration = Math.max(
     0,
-    ...usable.map((task) => earliest.get(task.id) + durations.get(task.id)),
+    ...usable.map((task) => earliest.get(task.id) + spans.get(task.id)),
   );
   const latest = new Map(
-    usable.map((task) => [task.id, projectDuration - durations.get(task.id)]),
+    usable.map((task) => [task.id, projectDuration - spans.get(task.id)]),
   );
+  // Deadline constraints share the full dependency graph: backward propagation
+  // includes predecessors outside the stage. No containment edges or date changes.
+  const limits = new Map();
+  tasks.forEach((stage, index) => {
+    if (!stage.stageControl || stage.level !== 0 || stage.summaryMode !== "fixed" || !parseDate(stage.finish)) return;
+    const end = taskSubtreeRange(tasks, index).end;
+    const deadline = daysBetween(new Date(minimumStart), stage.finish) + 1;
+    tasks.slice(index, end).forEach(t => {
+      if (!byId.has(t.id)) return;
+      const bound = deadline - spans.get(t.id);
+      if (bound <= latest.get(t.id)) {
+        latest.set(t.id, bound);
+        limits.set(t.id, { id: stage.id, name: stage.name, date: stage.finish });
+      }
+    });
+  });
   [...order].reverse().forEach((id) => {
     outgoing.get(id).forEach((edge) => {
-      latest.set(id, Math.min(latest.get(id), latest.get(edge.to) - edge.weight));
+      const bound = latest.get(edge.to) - edge.weight;
+      if (bound < latest.get(id)) {
+        latest.set(id, bound);
+        if (limits.has(edge.to)) limits.set(id, limits.get(edge.to));
+        else limits.delete(id);
+      }
     });
   });
 
@@ -182,11 +206,12 @@ export function computeCPM(tasks) {
     metrics.set(task.id, {
       duration,
       es,
-      ef: es + duration,
+      ef: es + spans.get(task.id),
       ls,
-      lf: ls + duration,
+      lf: ls + spans.get(task.id),
       totalFloat: ls - es,
-      critical: Math.abs(ls - es) < 1e-9,
+      critical: ls - es <= 1e-9,
+      controllingDeadline: limits.get(task.id) || null,
       calculatedStart: formatDate(new Date(minimumStart + es * DAY_MS)),
       calculatedFinish: formatDate(new Date(minimumStart + (es + Math.max(1, duration) - 1) * DAY_MS)),
     });

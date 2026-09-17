@@ -545,3 +545,14 @@ textarea.task-input {resize:none;overflow:hidden;white-space:pre-wrap;overflow-w
 .relation-cell {flex-direction:column;gap:2px;}
 .relation-cell select {width:100%;font-size:12px;padding:4px 0;border:1px solid #c9d3df;background:white;border-radius:4px;}
 .task-cell > .row-notice {grid-column:1/-1;color:#8e262c;background:#fff4ee;padding:6px 12px;font-size:12px;line-height:1.6;}
+
+/* Stage controls are editor-only; PNG is rendered independently. */
+.row-number {gap:2px;flex-wrap:wrap;}
+.stage-flag {display:inline-flex;align-items:center;justify-content:center;padding:2px;border:0;border-radius:3px;background:transparent;color:#8191a3;cursor:pointer;}
+.stage-flag svg {fill:none;stroke:currentColor;stroke-width:1.6;}
+.stage-flag.active {color:#bd7610;background:#fff0cf;}
+.stage-flag.active svg {fill:#f6c65e;}
+.stage-flag:focus-visible {outline:2px solid #183454;outline-offset:1px;}
+.report-mode .stage-flag {visibility:hidden;}
+.schedule-grid {padding-right:9px;}
+@media print {.stage-flag {display:none;}}

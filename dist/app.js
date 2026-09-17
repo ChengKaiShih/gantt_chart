@@ -96,6 +96,7 @@ function normalizeProject(value) {
       notes: typeof item.notes === "string" ? item.notes : "",
       collapsed: Boolean(item.collapsed),
       summaryMode: item.summaryMode === "fixed" ? "fixed" : "auto",
+      stageControl: Boolean(item.stageControl) && level === 0 && item.summaryMode === "fixed" && !item.milestone,
       datesEdited: Boolean(item.datesEdited),
       requestedFinish: typeof item.requestedFinish === "string" ? item.requestedFinish : "",
       rowHeight: Number.isFinite(Number(item.rowHeight)) ? Math.max(48, Math.min(1200, Number(item.rowHeight))) : undefined,
@@ -185,6 +186,7 @@ function saveProject() {
 }
 
 function commit({ render = true, message = "" } = {}) {
+  state.tasks.forEach(t => { if(t.level !== 0 || t.summaryMode !== "fixed" || t.milestone) t.stageControl = false; });
   const scheduled = autoSchedule(state.tasks);
   if (scheduled.ok) state.tasks = scheduled.tasks;
   else { state = structuredClone(lastCommitted); showToast(scheduled.error); renderApp(); return; }
@@ -271,6 +273,9 @@ function timeUnitPosition(value,scale) {
 }
 function timelineX(model,date) {
   return (timeUnitPosition(date,model.scale)-timeUnitPosition(model.start,model.scale))*model.unitWidth;
+}
+function taskTimelineX(model,t) {
+  return timelineX(model,t.milestone ? addDays(t.finish,1) : t.start);
 }
 function timelineBarWidth(model,t) {
   return t.milestone?0:timelineX(model,addDays(t.finish,1))-timelineX(model,t.start);
@@ -361,6 +366,12 @@ function relationLabel(task) {
   return `${task.predecessors.length} 項關係`;
 }
 
+function deadlineMessage(metric) {
+  if (!(metric?.totalFloat < 0)) return '';
+  const target=metric.controllingDeadline ? `「${metric.controllingDeadline.name}」期限 ${metric.controllingDeadline.date}` : '全案完成目標';
+  return `排程需提前 ${-metric.totalFloat} 天，才能滿足${target}。`;
+}
+
 function renderGrid(displayTasks, cpm) {
   const model = timelineModel(displayTasks, state.scale);
   const warnings=stageWarnings(state.tasks);
@@ -385,11 +396,12 @@ function renderGrid(displayTasks, cpm) {
     const raw = state.tasks.find((taskItem) => taskItem.id === item.id);
     const summary = isSummaryTask(raw, state.tasks);
     const editable=!summary || raw.summaryMode==='fixed';
-    const notice=[raw.dateNotice,warnings.get(item.id)].filter(Boolean).join(" ");
     const metric = cpm.metrics?.get(item.id);
+    const deadlineNotice = deadlineMessage(metric);
+    const notice=[raw.dateNotice,warnings.get(item.id),deadlineNotice].filter(Boolean).join(" ");
     const duration = item.milestone ? 0 : inclusiveDuration(item.start, item.finish);
     const selected = item.id === selectedId;
-    const conflict = conflictIds.has(item.id);
+    const conflict = conflictIds.has(item.id) || metric?.totalFloat < 0;
     const collapseControl = summary
       ? `<button class="collapse-button" type="button" data-action="collapse" title="${raw.collapsed ? "展開" : "收合"}">${raw.collapsed ? "▸" : "▾"}</button>`
       : `<span class="collapse-spacer"></span>`;
@@ -397,7 +409,7 @@ function renderGrid(displayTasks, cpm) {
       ? `系統計算：${metric.calculatedStart}～${metric.calculatedFinish}；總浮時 ${metric.totalFloat} 日`
       : "";
     const floatText = summary || !metric ? "—" : `${metric.totalFloat}日`;
-    const barLeft = duration === null ? 0 : timelineX(model,item.start);
+    const barLeft = duration === null ? 0 : taskTimelineX(model,item);
     const barWidth = duration === null ? 0 : Math.max(3, timelineBarWidth(model,item));
     const barClass = `${summary ? "summary" : metric?.critical ? "critical" : ""} ${item.milestone ? "milestone" : ""}`;
     const bar = duration === null
@@ -406,11 +418,11 @@ function renderGrid(displayTasks, cpm) {
     html += `
       <div class="schedule-row ${selected ? "selected" : ""} ${summary ? "summary-row" : ""} ${conflict ? "conflict-row" : ""}" data-id="${escapeHtml(item.id)}" style="--timeline-width:${model.width}px">
         <div class="task-cell">
-          <div class="row-number">${escapeHtml(wbs.get(item.id))}<span class="row-resize-handle" title="拖曳調整列高；雙擊恢復自動列高" aria-hidden="true"></span></div>
+          <div class="row-number">${escapeHtml(wbs.get(item.id))}${item.level === 0 && !item.milestone ? `<button type="button" class="stage-flag ${raw.stageControl ? 'active' : ''}" data-action="stage-control" aria-pressed="${Boolean(raw.stageControl)}" aria-label="階段性任務或任務分段控制點" title="階段性任務或任務分段控制點"><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M4 18V2m0 1h11l-3 4 3 4H4"/></svg></button>` : ''}<span class="row-resize-handle" title="拖曳調整列高；雙擊恢復自動列高" aria-hidden="true"></span></div>
           <div class="task-name-wrap" style="padding-left:${5 + item.level * 18}px">
             ${collapseControl}
             <textarea class="task-input" data-field="name" rows="1" aria-label="工項名稱">${escapeHtml(item.name)}</textarea>
-            ${conflict ? `<span class="warning-mark" title="計畫日期與前置關係衝突">!</span>` : ""}
+            ${conflict ? `<span class="warning-mark" title="${escapeHtml(deadlineNotice || '計畫日期與前置關係衝突')}">!</span>` : ""}
           </div>
           <div><input class="date-input" type="date" data-field="start" value="${escapeHtml(item.start)}" ${editable ? "" : "disabled"} aria-label="開始日期" /></div>
           <div><input class="date-input" type="date" data-field="finish" value="${escapeHtml(item.finish)}" ${editable ? "" : "disabled"} aria-label="完成日期" /></div>
@@ -533,6 +545,32 @@ function addSiblingTask() {
   commit({ message: "已新增工項" });
 }
 
+function addMilestone() {
+  const index=state.tasks.findIndex(t=>t.id===selectedId);
+  const selected=deriveSummaryDates(state.tasks).find(t=>t.id===selectedId);
+  const date=selected?.finish || defaultDates().finish;
+  const item={...task(uid(), "新增里程碑", index<0?0:state.tasks[index].level, date, date),milestone:true,duration:0};
+  const insertAt=index<0?state.tasks.length:taskSubtreeRange(state.tasks,index).end;
+  state.tasks.splice(insertAt,0,item);
+  selectedId ||= item.id;
+  commit({message:"已新增里程碑"});
+}
+
+async function toggleStageControl(id) {
+  const item=state.tasks.find(t=>t.id===id);
+  if(!item || item.level!==0 || item.milestone)return;
+  if(item.stageControl){item.stageControl=false;commit();return;}
+  const displayed=deriveSummaryDates(state.tasks).find(t=>t.id===id);
+  if(item.summaryMode!=="fixed") {
+    const accepted=await confirmAction("啟用階段期限",`將「${item.name}」改為固定工期，並以 ${displayed.finish} 作為階段期限？`,"確定啟用");
+    if(!accepted || !state.tasks.includes(item))return;
+    item.start=displayed.start;item.finish=displayed.finish;
+    item.duration=inclusiveDuration(item.start,item.finish);item.summaryMode="fixed";item.datesEdited=true;
+  }
+  item.stageControl=true;
+  commit();
+}
+
 function addChildTask() {
   const index = state.tasks.findIndex((item) => item.id === selectedId);
   if (index < 0) return;
@@ -540,7 +578,7 @@ function addChildTask() {
   const wasSummary = isSummaryTask(parent, state.tasks);
   const dates = inclusiveDuration(parent.start, parent.finish) !== null ? parent : defaultDates();
   const { end } = taskSubtreeRange(state.tasks, index);
-  if(!wasSummary){ parent.summaryMode=parent.datesEdited?'fixed':'auto';parent.milestone=false; }
+  if(!wasSummary){ parent.summaryMode=parent.stageControl || parent.datesEdited?'fixed':'auto';parent.milestone=false; }
   const inheritedRelations = wasSummary || parent.summaryMode==='fixed' ? [] : parent.predecessors.map((relation) => ({ ...relation }));
   const item = task(uid(), "新增下階工項", parent.level + 1, dates.start, dates.finish, inheritedRelations, "");
   if (!wasSummary && parent.summaryMode!=="fixed") parent.predecessors = [];
@@ -623,7 +661,7 @@ function renderRelationDialog() {
   const candidates = relationCandidates(item);
   $("#relationResult").textContent = `排程結果：${item.start} 開始 → ${item.finish} 完成，工期 ${item.milestone ? 0 : item.duration ?? inclusiveDuration(item.start,item.finish)} 日。多個前置條件取最晚允許日期。`;
   $("#notBefore").value = item.notBefore || "";
-  $("#relationError").textContent = item.dateNotice || stageWarnings(state.tasks).get(item.id) || "";
+  $("#relationError").textContent = [item.dateNotice,stageWarnings(state.tasks).get(item.id),deadlineMessage(computeCPM(state.tasks).metrics.get(item.id))].filter(Boolean).join(" ");
   if (!item.predecessors.length) {
     elements.relationList.innerHTML = `<div class="relation-empty">尚未設定前置工項，此工項將視為網圖起始工項。</div>`;
     return;
@@ -670,7 +708,7 @@ function removeRelation(index) {
 }
 
 function exportProject() {
-  const contents = JSON.stringify({ format: "engineering-gantt-v2.1", exportedAt: new Date().toISOString(), ...state }, null, 2);
+  const contents = JSON.stringify({ format: "engineering-gantt-v2.2", exportedAt: new Date().toISOString(), ...state }, null, 2);
   const blob = new Blob([contents], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -717,6 +755,7 @@ elements.scheduleGrid.addEventListener("click", (event) => {
     commit();
   }
   if (action === "relations") openRelations(row.dataset.id);
+  if (action === "stage-control") void toggleStageControl(row.dataset.id);
 });
 
 elements.scheduleGrid.addEventListener("change", (event) => {
@@ -731,12 +770,13 @@ elements.scheduleGrid.addEventListener("change", (event) => {
     if(event.target.value==='fixed') {item.start=displayed.start;item.finish=displayed.finish;item.duration=inclusiveDuration(item.start,item.finish);item.milestone=false;}
     else {
       if(state.tasks.some(t=>(t.predecessors||[]).some(r=>r.taskId===item.id))) {showToast('其他工項正依賴此固定工期，請先調整前置關係。');renderApp();return;}
-      item.predecessors=[];item.notBefore='';
+      item.predecessors=[];item.notBefore='';item.stageControl=false;
     }
     item.summaryMode=event.target.value;
   }
   else if (field === "duration") item.duration = Number(event.target.value);
   else if (field === "start") { item.start = event.target.value; item.notBefore = event.target.value; }
+  else if (field === "finish" && item.milestone) {item.start=event.target.value;item.notBefore=event.target.value;item.duration=0;}
   else if (field === "finish") {
     item.duration = inclusiveDuration(item.start, event.target.value);
     if (item.duration === null) { state.tasks = before; showToast("完成日不得早於開始日。"); renderApp(); return; }
@@ -881,7 +921,7 @@ function explainRelation(item, r) {
   const source = r.type[0] === 'F' ? '完成日' : '開始日';
   const target = r.type[1] === 'F' ? '完成日' : '開始日';
   const lag = Number(r.lag);
-  const phrase = r.type === 'FS' && !pre.milestone ? `完成隔日起${lag >= 0 ? '延後' : '提前'} ${Math.abs(lag)} 日` : `${source}${lag >= 0 ? '加' : '減'} ${Math.abs(lag)} 日`;
+  const phrase = r.type === 'FS' ? `完成隔日起${lag >= 0 ? '延後' : '提前'} ${Math.abs(lag)} 日` : `${source}${lag >= 0 ? '加' : '減'} ${Math.abs(lag)} 日`;
   return `「${pre.name}」${phrase}：本工項${target}不得早於 ${r.type[1] === 'F' ? end : start}。依此條件推算 ${start}～${end}；實際排程須同時滿足其他關係及日期限制。`;
 }
 function widths() { return state.columnWidths || [44,228,112,112,72,106,62,220]; }
@@ -917,7 +957,7 @@ function drawArrows(model, tasks) {
   const points = new Map();
   rows.forEach((row,id)=>{
     const t=tasks.find(t=>t.id===id), rect=row.getBoundingClientRect();
-    const x=widths().reduce((a,b)=>a+b,0)+timelineX(model,t.start);
+    const x=widths().reduce((a,b)=>a+b,0)+taskTimelineX(model,t);
     points.set(id,{s:x,f:x+(t.milestone?0:timelineBarWidth(model,t)),y:rect.top-gridRect.top+rect.height/2});
   });
   let paths='';
@@ -952,10 +992,7 @@ function setupV2() {
   $('#rangeMode').onchange=e=>{state.rangeMode=e.target.value;commit();};
   $('#showArrows').onchange=()=>renderApp();
   $('#reportMode').onchange=e=>document.body.classList.toggle('report-mode',e.target.checked);
-  $('#milestoneToggle').onclick=()=>{
-    const t=currentTask(); if(!t||isSummaryTask(t,state.tasks)) {showToast('請選擇最下階工項。');return;}
-    t.milestone=!t.milestone; t.duration=t.milestone?0:1; commit();
-  };
+  $('#addMilestone').onclick=addMilestone;
   $('#notBefore').onchange=e=>{
     const t=state.tasks.find(t=>t.id===relationTaskId); if(!t)return;
     t.notBefore=e.target.value; commit();renderRelationDialog();
@@ -1044,7 +1081,7 @@ async function renderPng() {
     if(left){let x=0;const values=[wbs.get(t.id),nameLines,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,relationLabel(t),`${cpm.metrics.get(t.id)?.totalFloat??'—'}`,lines];
       values.forEach((v,j)=>{if(!exportColumns.includes(j))return;ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();const textLines=Array.isArray(v)?v:[v];const firstY=y+rh/2-(textLines.length-1)*10;textLines.forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),firstY+k*20));ctx.restore();x+=widths()[j];});}
     header.querySelectorAll('.bottom .time-segment').forEach(el=>{const x=left+parseFloat(el.style.left);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+rh);ctx.stroke();});
-    const x=left+timelineX(model,t.start),bw=t.milestone?0:timelineBarWidth(model,t);
+    const x=left+taskTimelineX(model,t),bw=t.milestone?0:timelineBarWidth(model,t);
     coords.set(t.id,{s:x,f:x+bw,y:y+rh/2});y+=rh;
   });
   if($('#showArrows').checked)rows.forEach(({t})=>(t.predecessors||[]).forEach(r=>{
