@@ -1232,6 +1232,7 @@ function renderRelationDialog() {
   if (!item) return;
   elements.relationTitle.textContent = `設定「${item.name}」的前置工項`;
   const candidates = relationCandidates(item);
+  const numbers = wbsNumbers(state.tasks);
   $("#relationResult").textContent = `排程結果：${item.start} 開始 → ${item.finish} 完成，工期 ${item.milestone ? 0 : item.duration ?? inclusiveDuration(item.start,item.finish)} 日。多個前置條件取最晚允許日期。`;
   $("#notBefore").value = item.notBefore || "";
   $("#relationError").textContent = [item.dateNotice,stageWarnings(state.tasks).get(item.id),deadlineMessage(computeCPM(state.tasks).metrics.get(item.id))].filter(Boolean).join(" ");
@@ -1241,7 +1242,7 @@ function renderRelationDialog() {
   }
   elements.relationList.innerHTML = item.predecessors.map((relation, index) => {
     const options = candidates.map((candidate) =>
-      `<option value="${escapeHtml(candidate.id)}" ${candidate.id === relation.taskId ? "selected" : ""}>${escapeHtml(candidate.name)}</option>`,
+      `<option value="${escapeHtml(candidate.id)}" ${candidate.id === relation.taskId ? "selected" : ""}>${"　".repeat(candidate.level)}${escapeHtml(numbers.get(candidate.id))} ${escapeHtml(candidate.name)}</option>`,
     ).join("");
     const types = RELATION_TYPES.map((type) =>
       `<option value="${type}" ${type === relation.type ? "selected" : ""}>${type}</option>`,
@@ -1626,33 +1627,79 @@ async function exportImage(copy) {
     }
   }catch(e){showToast(`圖片輸出失敗：${e.message}。可嘗試下載 PNG 或改用較大時間尺度。`);}
 }
+function relativeYearLabel(year, firstYear) {
+  const n=year-firstYear+1, digits='零一二三四五六七八九';
+  const number=n<10?digits[n]:n<100?`${n<20?'':digits[Math.floor(n/10)]}十${n%10?digits[n%10]:''}`:String(n);
+  return `第${number}年`;
+}
+
 async function renderPng() {
   await document.fonts.ready;
   const tasks=deriveSummaryDates(state.tasks), model=timelineModel(tasks,state.scale), cpm=computeCPM(state.tasks);
-  const exportColumns=[0,1,2,3,4,7];
-  const left=$('#exportScope').value==='chart'?0:exportColumns.reduce((sum,i)=>sum+widths()[i],0);
+  const exportColumns=[0,1,2,3,4,7], scope=$('#exportScope').value;
+  const full=scope==='full', relative=scope==='relative';
   const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
-  ctx.font='13px "Microsoft JhengHei", sans-serif';
-  const rows=visibleTasks(tasks).map(t=>({t, lines:wrapText(ctx,t.notes||'',widths()[7]-16),nameLines:wrapText(ctx,t.name,widths()[1]-20-t.level*16)}));
-  rows.forEach(r=>r.h=Math.max(48,r.t.rowHeight||48,(Math.max(r.lines.length,r.nameLines.length))*20+16));
-  const w=left+model.width+32,h=rows.reduce((n,r)=>n+r.h,0)+144;
+  const font='16px "Microsoft JhengHei", sans-serif', boldFont='bold '+font;
+  const lineHeight=24, padding=10, wbs=wbsNumbers(state.tasks);
+  const visible=visibleTasks(tasks), columnWidths=[...widths()];
+  const labels=['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'];
+  const values=t=>[wbs.get(t.id),t.name,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,'','',t.notes||''];
+  ctx.font=font;
+  // Short numeric fields stay on one line; source UI widths are never mutated.
+  [0,2,3,4].forEach(j=>{
+    columnWidths[j]=Math.max(columnWidths[j],ctx.measureText(labels[j]).width+padding*2,...visible.map(t=>ctx.measureText(String(values(t)[j])).width+padding*2));
+  });
+  const left=full?exportColumns.reduce((sum,i)=>sum+columnWidths[i],0):0;
+  const rows=visible.map(t=>{
+    const summary=isSummaryTask(t,tasks);
+    const cells=values(t).map((v,j)=>{
+      ctx.font=j===1&&summary?boldFont:font;
+      const indent=j===1?Math.min(t.level*16,Math.max(0,columnWidths[j]-padding*2-20)):0;
+      return {lines:[1,7].includes(j)?wrapText(ctx,String(v),columnWidths[j]-padding*2-indent):[String(v)],indent};
+    });
+    const count=full?Math.max(...exportColumns.map(j=>cells[j].lines.length)):1;
+    return {t,cells,h:Math.max(48,t.rowHeight||48,count*lineHeight+padding*2)};
+  });
+  ctx.font=font;
+  const headers=labels.map((label,j)=>wrapText(ctx,label,columnWidths[j]-padding*2));
+  const headerHeight=Math.max(72,full?Math.max(...exportColumns.map(j=>headers[j].length))*lineHeight+padding*2:72);
+  const halfHeader=headerHeight/2, contentWidth=left+model.width, w=contentWidth+32;
+  ctx.font='bold 24px "Microsoft JhengHei", sans-serif';
+  const titleLines=wrapText(ctx,state.name,contentWidth);
+  ctx.font=font;
+  const legendLines=wrapText(ctx,'一般工項：金色　要徑：紅色　里程碑：◆　工期：日曆天',contentWidth);
+  const headingHeight=16+titleLines.length*32+8+legendLines.length*lineHeight+12;
+  const h=headingHeight+headerHeight+rows.reduce((n,r)=>n+r.h,0)+16;
   if(w*2>16000||h*2>16000||w*h*4>60000000)throw new Error('圖面過大，請收合工項或切換至月／季／年尺度');
   canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
-  ctx.fillStyle='#10233e';ctx.font='bold 20px "Microsoft JhengHei", sans-serif';ctx.fillText(state.name,16,30);
-  ctx.font='12px "Microsoft JhengHei", sans-serif';ctx.fillText('一般工項：金色　要徑：紅色　里程碑：◆　工期：日曆天',16,54);
-  ctx.translate(16,64);ctx.textBaseline='middle';ctx.fillStyle='#183454';ctx.fillRect(0,0,w-32,72);
-  if(left){let x=0;['項次','工作項目','開始日期','完成日期','工期','前置關係','浮時','主要控制／說明'].forEach((label,i)=>{if(!exportColumns.includes(i))return;ctx.fillStyle='#fff';ctx.fillText(label,x+6,36);x+=widths()[i];});}
+  ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillStyle='#10233e';ctx.font='bold 24px "Microsoft JhengHei", sans-serif';
+  titleLines.forEach((text,i)=>ctx.fillText(text,16,32+i*32));
+  ctx.font=font;legendLines.forEach((text,i)=>ctx.fillText(text,16,16+titleLines.length*32+8+lineHeight/2+i*lineHeight));
+  ctx.translate(16,headingHeight);ctx.fillStyle='#183454';ctx.fillRect(0,0,contentWidth,headerHeight);
+  const drawLines=(lines,x,y,width,height,center=false,indent=0)=>{
+    ctx.save();ctx.beginPath();ctx.rect(x+2,y,width-4,height);ctx.clip();
+    ctx.textAlign=center?'center':'left';
+    const firstY=y+height/2-(lines.length-1)*lineHeight/2;
+    lines.forEach((text,k)=>ctx.fillText(text,center?x+width/2:x+padding+indent,firstY+k*lineHeight));
+    ctx.restore();
+  };
+  if(full){let x=0;exportColumns.forEach(j=>{ctx.fillStyle='#fff';drawLines(headers[j],x,0,columnWidths[j],headerHeight,true);x+=columnWidths[j];});}
   const header=document.createElement('div');header.innerHTML=timelineHeader(model);
   header.querySelectorAll('.time-segment').forEach(el=>{
     const x=left+parseFloat(el.style.left),sw=parseFloat(el.style.width),top=el.parentElement.classList.contains('top');
-    ctx.strokeStyle='#60738a';ctx.strokeRect(x,top?0:36,sw,36);ctx.fillStyle=top?'#f8d88e':'#fff';ctx.save();ctx.beginPath();ctx.rect(x,top?0:36,sw,36);ctx.clip();ctx.fillText(el.textContent,x+Math.max(3,(sw-ctx.measureText(el.textContent).width)/2),top?18:54);ctx.restore();
+    const text=relative?el.textContent.replace(/(\d{4,})年/g,(_,year)=>relativeYearLabel(Number(year),model.start.getUTCFullYear())):el.textContent;
+    ctx.strokeStyle='#60738a';ctx.strokeRect(x,top?0:halfHeader,sw,halfHeader);ctx.fillStyle=top?'#f8d88e':'#fff';
+    ctx.save();ctx.beginPath();ctx.rect(x,top?0:halfHeader,sw,halfHeader);ctx.clip();ctx.textAlign='center';
+    ctx.fillText(text,x+sw/2,top?halfHeader/2:halfHeader*1.5);ctx.restore();
   });
-  let y=72;const coords=new Map(),wbs=wbsNumbers(state.tasks);
-  rows.forEach(({t,lines,nameLines,h:rh},i)=>{
-    ctx.fillStyle=isSummaryTask(t,tasks)?'#e9eff5':i%2?'#fff':'#f7f9fb';ctx.fillRect(0,y,w-32,rh);
-    ctx.strokeStyle='#dce3eb';ctx.strokeRect(0,y,w-32,rh);
-    if(left){let x=0;const values=[wbs.get(t.id),nameLines,t.start,t.finish,`${t.milestone?0:inclusiveDuration(t.start,t.finish)}日`,relationLabel(t),`${cpm.metrics.get(t.id)?.totalFloat??'—'}`,lines];
-      values.forEach((v,j)=>{if(!exportColumns.includes(j))return;ctx.strokeRect(x,y,widths()[j],rh);ctx.fillStyle='#183454';ctx.save();ctx.beginPath();ctx.rect(x+2,y,widths()[j]-4,rh);ctx.clip();const textLines=Array.isArray(v)?v:[v];const firstY=y+rh/2-(textLines.length-1)*10;textLines.forEach((line,k)=>ctx.fillText(String(line),x+6+(j===1?t.level*16:0),firstY+k*20));ctx.restore();x+=widths()[j];});}
+  let y=headerHeight;const coords=new Map();
+  rows.forEach(({t,cells,h:rh},i)=>{
+    ctx.fillStyle=isSummaryTask(t,tasks)?'#e9eff5':i%2?'#fff':'#f7f9fb';ctx.fillRect(0,y,contentWidth,rh);
+    ctx.strokeStyle='#dce3eb';ctx.strokeRect(0,y,contentWidth,rh);
+    if(full){let x=0;exportColumns.forEach(j=>{
+      ctx.strokeRect(x,y,columnWidths[j],rh);ctx.fillStyle='#183454';ctx.font=j===1&&isSummaryTask(t,tasks)?boldFont:font;
+      drawLines(cells[j].lines,x,y,columnWidths[j],rh,[0,2,3,4].includes(j),cells[j].indent);x+=columnWidths[j];
+    });}
     header.querySelectorAll('.bottom .time-segment').forEach(el=>{const x=left+parseFloat(el.style.left);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+rh);ctx.stroke();});
     const x=left+taskTimelineX(model,t),bw=t.milestone?0:timelineBarWidth(model,t);
     coords.set(t.id,{s:x,f:x+bw,y:y+rh/2});y+=rh;
